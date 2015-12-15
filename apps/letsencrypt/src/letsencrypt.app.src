@@ -1,0 +1,17 @@
+{application, 'letsencrypt',
+ [{description, "letsencrypt.org client library"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib,
+    shotgun,
+    jiffy
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {contributors, []},
+  {licenses, []},
+  {links, []}
+ ]}.
