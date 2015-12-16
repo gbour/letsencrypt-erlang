@@ -15,7 +15,8 @@
 -module(letsencrypt_api).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([connect/1, close/1, get_nonce/2, new_reg/4, new_authz/5, challenge/6, new_cert/5, get_intermediate/1]).
+-export([connect/1, close/1, get_nonce/2, new_reg/4, new_authz/5, challenge/6, challenge/3]).
+-export([new_cert/5, get_intermediate/1]).
 
 -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
 
@@ -87,6 +88,16 @@ challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
 
     Nonce.
 
+challenge(status, Conn, Path) ->
+    {ok, Resp} = shotgun:get(Conn, Path, #{}),
+    #{headers := RHeaders, body := Body} = Resp,
+    %io:format("challenge status: ~p", [Body]),
+
+    Nonce = proplists:get_value(<<"replay-nonce">>, RHeaders),
+
+    #{<<"status">> := Status} = jiffy:decode(Body, [return_maps]),
+    {ok, status(Status), Nonce}.
+
 
 new_cert(Conn, Path, Key, Jws, Csr) ->
     Payload = #{
@@ -118,4 +129,13 @@ get_intermediate({Domain, Port, Path}) ->
     %io:format("resp= ~p~n", [Resp]),
     #{body := Body} = Resp,
     {ok, Body}.
+
+status(<<"pending">>)    -> pending;
+status(<<"processing">>) -> processing;
+status(<<"valid">>)      -> valid;
+status(<<"invalid">>)    -> invalid;
+status(<<"revoked">>)    -> revoked;
+status(_Status)       ->
+    io:format("unknown status: ~p~n", [_Status]),
+    unknown.
 
