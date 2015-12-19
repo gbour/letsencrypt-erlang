@@ -16,9 +16,9 @@
 -author("Guillaume Bour <guillaume@bour.cc>").
 -behaviour(gen_fsm).
 
--export([create/2, finalize/0]).
+-export([certify/2]).
 -export([start/1, stop/0, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
--export([idle/3, new_cert/3]).
+-export([idle/3, pending/3, valid/3]).
 
 -define(STAGING_API_URL, {"acme-staging.api.letsencrypt.org", 443, "/acme/"}).
 -define(DEFAULT_API_URL, {"acme-v01.api.letsencrypt.org"    , 443, "/acme/"}).
@@ -111,11 +111,29 @@ getopts([Unk|_], _) ->
 %%
 %%
 
-create(Domain, Opts) ->
-    gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000).
+certify(Domain, Opts) ->
+    gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000),
+    case wait_valid(10) of
+        ok ->
+            gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
 
-finalize() ->
-    gen_fsm:sync_send_event({global, ?MODULE}, ok, 15000).
+        Error -> Error
+    end.
+
+wait_valid(X) ->
+    wait_valid(X,X).
+
+wait_valid(0,_) ->
+    {error, pending};
+wait_valid(Cnt,Max) ->
+    case gen_fsm:sync_send_event({global, ?MODULE}, check, 15000) of
+        valid   -> ok;
+        pending ->
+            timer:sleep(500*(Max-Cnt+1)),
+            wait_valid(Cnt-1,Max);
+        Status  -> {error, Status}
+    end.
+
 
 %%
 %% gen_server API
@@ -143,10 +161,24 @@ idle({create, Domain, _Opts}, _,
 
     Nonce4 = letsencrypt_api:challenge(post, Conn, str(AcmPath), Key, JWS#{nonce => Nonce3}, Thumbprint),
 
-    {reply, CPath, new_cert, State#state{domain=Domain, nonce=Nonce4, challenge=ChallengeResponse#{uri => CUri}}}.
+    {reply, CPath, pending, State#state{domain=Domain, nonce=Nonce4, challenge=ChallengeResponse#{uri => CUri}}}.
 
-new_cert(ok, _, State=#state{mode=webroot, domain=Domain, cert_path=CertPath, key=Key, jws=JWS, 
+pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) ->
+    Conn  = get_conn(State),
+    %Nonce = get_nonce(Conn, State),
+
+    BAcmDomain = bin("https://"++AcmDomain),
+    LAcmDomain = length("https://"++AcmDomain),
+    <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
+
+    {ok, Status, _Nonce2} = letsencrypt_api:challenge(status, Conn, str(AcmPath)),
+    io:format(":: pending -> ~p (~p)~n", [Status, AcmPath]),
+
+    {reply, Status, Status, State}.
+
+valid(_, _, State=#state{mode=webroot, domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
                              acme_srv={_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
+
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
 
