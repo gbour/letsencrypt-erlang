@@ -40,7 +40,8 @@ private_key(KeyFile, _) ->
         b64 => [
             letsencrypt_utils:b64encode(binary:encode_unsigned(N)),
             letsencrypt_utils:b64encode(binary:encode_unsigned(E))
-        ]
+        ],
+        file => KeyFile
     }.
 
 
@@ -64,4 +65,7 @@ certificate(Domain, DomainCert, IntermediateCert, CertsPath) ->
                                 (base64:encode(DomainCert))/binary, $\n,
                                 "-----END CERTIFICATE-----\n",
                                 IntermediateCert/binary>>
-    ).
+    ),
+
+    FileName.
+

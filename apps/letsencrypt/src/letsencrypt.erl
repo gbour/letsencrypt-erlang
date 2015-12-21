@@ -172,7 +172,7 @@ pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) 
     <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
 
     {ok, Status, _Nonce2} = letsencrypt_api:challenge(status, Conn, str(AcmPath)),
-    io:format(":: pending -> ~p (~p)~n", [Status, AcmPath]),
+    %io:format(":: pending -> ~p (~p)~n", [Status, AcmPath]),
 
     {reply, Status, Status, State}.
 
@@ -182,14 +182,14 @@ valid(_, _, State=#state{mode=webroot, domain=Domain, cert_path=CertPath, key=Ke
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
 
-    _   = letsencrypt_ssl:private_key({new, str(<<Domain/binary, ".key">>)}, CertPath),
+    #{file := KeyFile} = letsencrypt_ssl:private_key({new, str(<<Domain/binary, ".key">>)}, CertPath),
     Csr = letsencrypt_ssl:cert_request(str(Domain), CertPath), 
 
     {DomainCert, Nonce2} = letsencrypt_api:new_cert(Conn, BasePath, Key, JWS#{nonce => Nonce}, Csr),
 
-    letsencrypt_ssl:certificate(str(Domain), DomainCert, IntermediateCert, CertPath),
+    CertFile = letsencrypt_ssl:certificate(str(Domain), DomainCert, IntermediateCert, CertPath),
 
-    {reply, ok, idle, State#state{nonce=Nonce2}}.
+    {reply, {ok, #{key => bin(KeyFile), cert => bin(CertFile)}}, idle, State#state{nonce=Nonce2}}.
 
 %handle_call({create, Domain, Opts}, _, State) ->
 %    Conn = get_conn(State),
