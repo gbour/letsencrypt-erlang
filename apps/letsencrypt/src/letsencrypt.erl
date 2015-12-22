@@ -117,7 +117,9 @@ certify(Domain, Opts) ->
         ok ->
             gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
 
-        Error -> Error
+        Error ->
+            gen_fsm:send_all_state_event({global, ?MODULE}, reset),
+            Error
     end.
 
 wait_valid(X) ->
@@ -198,9 +200,14 @@ valid(_, _, State=#state{mode=webroot, domain=Domain, cert_path=CertPath, key=Ke
 %
 %    {reply, ok, State#state{conn=Conn}};
 
+handle_event(reset, StateName, State) ->
+    %io:format("reset from ~p state~n", [StateName]),
+    {next_state, idle, State};
+
 handle_event(_, StateName, State) ->
     io:format("async evt: ~p~n", [StateName]),
     {next_state, StateName, State}.
+
 
 handle_sync_event(_,_, StateName, State) ->
     io:format("sync evt: ~p~n", [StateName]),
