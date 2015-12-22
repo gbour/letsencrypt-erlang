@@ -47,9 +47,12 @@
     challenge = undefined
 }).
 
+
+-spec start(list()) -> {'ok', pid}|{'error', {'already_started',pid()}}.
 start(Args) ->
     gen_fsm:start_link({global, ?MODULE}, ?MODULE, Args, []).
 
+-spec stop() -> 'ok'.
 stop() ->
     gen_fsm:stop({global, ?MODULE}).
 
@@ -111,6 +114,7 @@ getopts([Unk|_], _) ->
 %%
 %%
 
+-spec certify(string()|binary(), []) -> {'ok', #{atom() => binary()}}|{'error','invalid'}.
 certify(Domain, Opts) ->
     gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000),
     case wait_valid(10) of
