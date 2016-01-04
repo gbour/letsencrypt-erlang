@@ -5,3 +5,5 @@ otp_release:
 install:
     - ./rebar3 update
     - ./rebar3 compile
+script: 
+    - true
