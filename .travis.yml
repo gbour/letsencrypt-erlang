@@ -3,4 +3,5 @@ otp_release:
     - 18.2.1
     - 17.5
 install:
+    - ./rebar3 update
     - ./rebar3 compile
