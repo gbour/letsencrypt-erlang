@@ -167,7 +167,7 @@ idle({create, Domain, _Opts}, _,
 
     Nonce4 = letsencrypt_api:challenge(post, Conn, str(AcmPath), Key, JWS#{nonce => Nonce3}, Thumbprint),
 
-    {reply, CPath, pending, State#state{domain=Domain, nonce=Nonce4, challenge=ChallengeResponse#{uri => CUri}}}.
+    {reply, CPath, pending, State#state{conn=Conn, domain=Domain, nonce=Nonce4, challenge=ChallengeResponse#{uri => CUri}}}.
 
 pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) ->
     Conn  = get_conn(State),
@@ -180,7 +180,7 @@ pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) 
     {ok, Status, _Nonce2} = letsencrypt_api:challenge(status, Conn, str(AcmPath)),
     %io:format(":: pending -> ~p (~p)~n", [Status, AcmPath]),
 
-    {reply, Status, Status, State}.
+    {reply, Status, Status, State#state{conn=Conn}}.
 
 valid(_, _, State=#state{mode=webroot, domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
                              acme_srv={_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
@@ -195,7 +195,7 @@ valid(_, _, State=#state{mode=webroot, domain=Domain, cert_path=CertPath, key=Ke
 
     CertFile = letsencrypt_ssl:certificate(str(Domain), DomainCert, IntermediateCert, CertPath),
 
-    {reply, {ok, #{key => bin(KeyFile), cert => bin(CertFile)}}, idle, State#state{nonce=Nonce2}}.
+    {reply, {ok, #{key => bin(KeyFile), cert => bin(CertFile)}}, idle, State#state{conn=Conn, nonce=Nonce2}}.
 
 %handle_call({create, Domain, Opts}, _, State) ->
 %    Conn = get_conn(State),
