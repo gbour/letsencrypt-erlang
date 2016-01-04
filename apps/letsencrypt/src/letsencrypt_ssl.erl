@@ -17,7 +17,7 @@
 
 -export([private_key/2, cert_request/2, certificate/4]).
 
--include("include/public_key.hrl").
+-include_lib("public_key/include/public_key.hrl").
 
 % create key
 private_key(undefined, CertsPath) ->
