@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/gbour/letsencrypt-erlang.svg?branch=master)](https://travis-ci.org/gbour/letsencrypt-erlang)
+
 # letsencrypt-erlang
 Let's Encrypt client library for Erlang
 
