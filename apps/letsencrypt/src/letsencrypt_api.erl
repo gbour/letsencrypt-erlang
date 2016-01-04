@@ -31,7 +31,7 @@ close(Conn) ->
 
 
 get_nonce(Conn, {_,_,BasePath}) ->
-    {ok, #{headers := Headers}} = shotgun:head(Conn, BasePath++"/new-reg", #{}, #{}),
+    {ok, #{headers := Headers}} = shotgun:get(Conn, BasePath++"/new-reg", #{}, #{}),
     proplists:get_value(<<"replay-nonce">>, Headers).
 
 
