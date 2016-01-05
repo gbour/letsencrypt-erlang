@@ -18,7 +18,7 @@
 
 -export([certify/2]).
 -export([start/1, stop/0, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
--export([idle/3, pending/3, valid/3]).
+-export([idle/3, validated/3, pending/3, valid/3]).
 
 -define(STAGING_API_URL, {"acme-staging.api.letsencrypt.org", 443, "/acme/"}).
 -define(DEFAULT_API_URL, {"acme-v01.api.letsencrypt.org"    , 443, "/acme/"}).
@@ -116,14 +116,22 @@ getopts([Unk|_], _) ->
 
 -spec certify(string()|binary(), []) -> {'ok', #{atom() => binary()}}|{'error','invalid'}.
 certify(Domain, Opts) ->
-    gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000),
-    case wait_valid(10) of
-        ok ->
-            gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
+    try gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000) of
+        validated ->
+            gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000),
 
-        Error ->
-            gen_fsm:send_all_state_event({global, ?MODULE}, reset),
-            Error
+            case wait_valid(10) of
+                ok ->
+                    gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
+
+                Error ->
+                    gen_fsm:send_all_state_event({global, ?MODULE}, reset),
+                    Error
+            end;
+
+        _ -> {error, tos_not_validated}
+    catch
+        X:Y -> {error, {X,Y}}
     end.
 
 wait_valid(X) ->
@@ -145,7 +153,19 @@ wait_valid(Cnt,Max) ->
 %% gen_server API
 %%
 
-idle({create, Domain, _Opts}, _, 
+idle({create, Domain, Opts}, _, State) ->
+    Fun = proplists:get_value(validation_callback, Opts),
+
+    NextState = case validate_agreement(Fun) of
+        true -> validated;
+        _    ->
+            io:format("TOS not validated!~n"),
+            idle
+    end,
+
+    {reply, NextState, NextState, State}.
+
+validated({create, Domain, _Opts}, _,
         State=#state{mode=webroot, webroot_path=WPath, key=Key, jws=JWS, acme_srv={AcmDomain,_,BasePath}}) ->
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
@@ -252,3 +272,12 @@ str(X) when is_binary(X) ->
 str(_X) ->
     throw(invalid).
 
+validate_agreement(undefined) ->
+    true;
+validate_agreement(Fun) ->
+    try Fun(?AGREEMENT_URL) of
+        true -> true;
+        _    -> false
+    catch
+        _:_ -> false
+    end.
