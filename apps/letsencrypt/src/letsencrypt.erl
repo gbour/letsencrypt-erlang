@@ -217,14 +217,14 @@ handle_sync_event(_,_, StateName, State) ->
     io:format("sync evt: ~p~n", [StateName]),
     {reply, ok, StateName, State}.
 
-handle_info(_, _, State) ->
-    {noreply, State}.
+handle_info(_, StateName, State) ->
+    {next_state, StateName, State}.
 
 terminate(_,_,_) ->
     ok.
 
-code_change(_, _, State, _) ->
-    {ok, State}.
+code_change(_, StateName, State, _) ->
+    {ok, StateName, State}.
 
 %%
 %% PRIVATE funs
