@@ -17,7 +17,8 @@
 
 -export([init/1, encode/3, thumbprint/2]).
 
-init(#{b64 := [N,E]}) ->
+-spec init(letsencrypt:ssl_privatekey()) -> letsencrypt:jws().
+init(#{b64 := {N,E}}) ->
     #{
         alg => 'RS256',
         jwk =>  #{
@@ -28,6 +29,8 @@ init(#{b64 := [N,E]}) ->
         nonce => undefined
     }.
 
+
+-spec encode(letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()) -> binary().
 encode(#{raw := RSAKey}, Jws, Content) ->
     %io:format("~p~n~p~n", [Jws, Content]),
     Protected = letsencrypt_utils:b64encode(jiffy:encode(Jws)),
@@ -43,7 +46,9 @@ encode(#{raw := RSAKey}, Jws, Content) ->
         {signature, Sign2}
     ]}).
 
-thumbprint(#{b64 := [N,E]}, Token) ->
+
+-spec thumbprint(letsencrypt:ssl_privatekey(), binary()) -> binary().
+thumbprint(#{b64 := {N,E}}, Token) ->
     % rfc7638 jwk thumbprint
     %NOTE: json payload requires to be encoded in keys alphabetical order
     Thumbprint = jiffy:encode({[

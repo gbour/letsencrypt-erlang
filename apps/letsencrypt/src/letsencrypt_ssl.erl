@@ -20,6 +20,7 @@
 -include_lib("public_key/include/public_key.hrl").
 
 % create key
+-spec private_key(undefined|{new, string()}|string(), string()) -> letsencrypt:ssl_privatekey().
 private_key(undefined, CertsPath) ->
     private_key({new, "letsencrypt.key"}, CertsPath);
 
@@ -37,14 +38,15 @@ private_key(KeyFile, _) ->
 
     #{
         raw => [E,N,D],
-        b64 => [
+        b64 => {
             letsencrypt_utils:b64encode(binary:encode_unsigned(N)),
             letsencrypt_utils:b64encode(binary:encode_unsigned(E))
-        ],
+        },
         file => KeyFile
     }.
 
 
+-spec cert_request(string(), string()) -> letsencrypt:ssl_csr().
 cert_request(Domain, CertsPath) ->
     Cmd =  "openssl req -new -key '"++CertsPath++"/"++Domain++".key' -subj '/CN="++Domain++"' -out '"++CertsPath++"/"++Domain++".csr'",
     _R = os:cmd(Cmd),
@@ -57,6 +59,7 @@ cert_request(Domain, CertsPath) ->
     letsencrypt_utils:b64encode(Csr).
 
 
+-spec certificate(string(), binary(), binary(), string()) -> string().
 certificate(Domain, DomainCert, IntermediateCert, CertsPath) ->
     FileName = CertsPath++"/"++Domain++".crt",
     %io:format("domain cert: ~p~nintermediate: ~p~n", [DomainCert, IntermediateCert]),

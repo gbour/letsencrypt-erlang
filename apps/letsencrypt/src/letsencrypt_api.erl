@@ -20,21 +20,24 @@
 
 -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
 
-
+-spec connect(letsencrypt:uri()) -> pid().
 connect({Domain, 443, _}) ->
     {ok, Conn} = shotgun:open(Domain, 443, https),
     Conn.
 
 
+-spec close(pid()) -> ok|{error,term()}.
 close(Conn) ->
     shotgun:close(Conn).
 
 
+-spec get_nonce(pid(), letsencrypt:uri()) -> binary().
 get_nonce(Conn, {_,_,BasePath}) ->
     {ok, #{headers := Headers}} = shotgun:get(Conn, BasePath++"/new-reg", #{}, #{}),
     proplists:get_value(<<"replay-nonce">>, Headers).
 
 
+-spec new_reg(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws()) -> letsencrypt:nonce().
 new_reg(Conn, Path, Key, Jws) ->
     Payload = #{
         resource  => 'new-reg',
@@ -47,6 +50,7 @@ new_reg(Conn, Path, Key, Jws) ->
     Nonce.
 
 
+-spec new_authz(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary()) -> {map(), letsencrypt:nonce()}.
 new_authz(Conn, Path, Key, Jws, Domain) ->
     Payload = #{
         resource => 'new-authz',
@@ -67,13 +71,14 @@ new_authz(Conn, Path, Key, Jws, Domain) ->
     {HttpChallenge, Nonce}.
 
 
+-spec challenge(pre , pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()) -> map();
+               (post, pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary()) -> letsencrypt:nonce().
 challenge(pre, _, _, Key, _, _HttpChallenge=#{<<"token">> := Token}) ->
     #{
         %path => "/.well-known/acme-challenge/",
         token      => Token,
         thumbprint => letsencrypt_jws:thumbprint(Key, Token)
     };
-
 
 challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
     Payload = #{
@@ -88,6 +93,8 @@ challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
 
     Nonce.
 
+
+-spec challenge(status, pid(), string()) -> {ok, atom(), letsencrypt:nonce()}.
 challenge(status, Conn, Path) ->
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
     #{headers := RHeaders, body := Body} = Resp,
@@ -99,6 +106,7 @@ challenge(status, Conn, Path) ->
     {ok, status(Status), Nonce}.
 
 
+-spec new_cert(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), letsencrypt:ssl_csr()) -> {binary(),letsencrypt:nonce()}.
 new_cert(Conn, Path, Key, Jws, Csr) ->
     Payload = #{
         resource => 'new-cert',
@@ -111,6 +119,7 @@ new_cert(Conn, Path, Key, Jws, Csr) ->
     {Body, Nonce}.
 
 
+-spec post(pid(), string(), map(), binary()) -> {ok, letsencrypt:nonce(), binary()}.
 post(Conn, Path, Headers, Content) ->
     %io:format("== POST ~p~n", [Path]),
     {ok, Resp} = shotgun:post(Conn, Path, Headers#{<<"Content-Type">> => <<"application/jose+json">>}, 
@@ -122,6 +131,7 @@ post(Conn, Path, Headers, Content) ->
     {ok, Nonce, Body}.
 
 
+-spec get_intermediate(letsencrypt:uri()) -> {ok, binary()}.
 get_intermediate({Domain, Port, Path}) ->
     {ok, Conn} = shotgun:open(Domain, Port, https),
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
@@ -130,6 +140,7 @@ get_intermediate({Domain, Port, Path}) ->
     #{body := Body} = Resp,
     {ok, Body}.
 
+-spec status(binary()) -> atom().
 status(<<"pending">>)    -> pending;
 status(<<"processing">>) -> processing;
 status(<<"valid">>)      -> valid;

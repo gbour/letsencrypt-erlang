@@ -17,10 +17,14 @@
 
 -export([b64encode/1]).
 
+-type character() :: integer().
+
+-spec b64encode(string()|binary()) -> binary().
 b64encode(X) ->
     Base64 = base64:encode(X),
     << <<(encode_byte(B)):8>> || <<B:8>> <= Base64, B =/= $= >>.
 
+-spec encode_byte(character()) -> character().
 encode_byte($+) -> $-;
 encode_byte($/) -> $_;
 encode_byte(B) -> B.

@@ -20,6 +20,15 @@
 -export([start/1, stop/0, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([idle/3, pending/3, valid/3]).
 
+% uri format compatible with shotgun library
+-type uri()            :: {Host::string(), Port::integer(), Path::string()}.
+-type nonce()          :: binary().
+-type jws()            :: #{'alg' => 'RS256', 'jwk' => map(), nonce => undefined|letsencrypt:nonce() }.
+-type ssl_privatekey() :: #{'raw' => crypto:rsa_private(), 'b64' => {binary(), binary()}, 'file' => string()}.
+-type ssl_csr()        :: binary().
+
+
+
 -define(STAGING_API_URL, {"acme-staging.api.letsencrypt.org", 443, "/acme/"}).
 -define(DEFAULT_API_URL, {"acme-v01.api.letsencrypt.org"    , 443, "/acme/"}).
 -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
@@ -28,25 +37,26 @@
 -define(WEBROOT_CHALLENGE_PATH, "/.well-known/acme-challenge/").
 
 -record(state, {
-    acme_srv = ?DEFAULT_API_URL,
-    key_file  = undefined,
-    cert_path = "/tmp",
+    acme_srv = ?DEFAULT_API_URL     :: uri(),
+    key_file  = undefined           :: undefined | string(),
+    cert_path = "/tmp"              :: string(),
 
-    mode = undefined,
+    mode = undefined                :: undefined | webroot,
     % mode = webroot
-    webroot_path = undefined,
+    webroot_path = undefined        :: undefined | string(),
 
-    intermediate_cert = undefined,
+    intermediate_cert = undefined   :: undefined | binary(),
 
     % state datas
-    conn  = undefined,
-    nonce = undefined,
-    domain = undefined,
-    key   = undefined,
-    jws   = undefined,
-    challenge = undefined
+    conn  = undefined               :: undefined | pid(),
+    nonce = undefined               :: undefined | nonce(),
+    domain = undefined              :: undefined | binary(),
+    key   = undefined               :: undefined | ssl_privatekey(),
+    jws   = undefined               :: undefined | jws(),
+    challenge = undefined           :: undefined | map()
 }).
 
+-type state() :: #state{}.
 
 -spec start(list()) -> {'ok', pid}|{'error', {'already_started',pid()}}.
 start(Args) ->
@@ -59,6 +69,7 @@ stop() ->
 %%
 %% Args:
 %%   staging
+-spec init(list( atom() | {atom(),any()} )) -> {ok, idle, state()}.
 init(Args) ->
     {Args2, State} = mode_opts(proplists:get_value(mode, Args), Args),
     State2 = getopts(Args2, State),
@@ -72,6 +83,7 @@ init(Args) ->
 
     {ok, idle, State2#state{key=Key, jws=Jws, intermediate_cert=IntermediateCert}}.
 
+-spec mode_opts(webroot, list(atom()|{atom(),any()}), state()) -> {list(atom()|{atom(),any()}), state()}.
 mode_opts(Mode, Args) ->
     mode_opts(Mode, proplists:delete(mode, Args), #state{mode=Mode}).
 
@@ -88,6 +100,7 @@ mode_opts(_, [], State) ->
     {[], State}.
     
 
+-spec getopts(list(atom()|{atom(),any()}), state()) -> state().
 getopts([], State) ->
     State;
 getopts([staging|Args], State) ->
@@ -114,7 +127,7 @@ getopts([Unk|_], _) ->
 %%
 %%
 
--spec certify(string()|binary(), []) -> {'ok', #{atom() => binary()}}|{'error','invalid'}.
+-spec certify(string()|binary(), []) -> {'ok', #{cert => binary(), key => binary}}|{'error','invalid'}.
 certify(Domain, Opts) ->
     gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000),
     case wait_valid(10) of
@@ -126,9 +139,11 @@ certify(Domain, Opts) ->
             Error
     end.
 
+-spec wait_valid(0..10) -> ok|{error, any()}.
 wait_valid(X) ->
     wait_valid(X,X).
 
+-spec wait_valid(0..10, 0..10) -> ok|{error, any()}.
 wait_valid(0,_) ->
     {error, pending};
 wait_valid(Cnt,Max) ->
@@ -230,16 +245,21 @@ code_change(_, StateName, State, _) ->
 %% PRIVATE funs
 %%
 
+-spec get_conn(state()) -> pid().
 get_conn(#state{conn=undefined, acme_srv=AcmeSrv}) ->
     letsencrypt_api:connect(AcmeSrv);
 get_conn(#state{conn=Conn}) ->
     Conn.
 
+
+-spec get_nonce(pid(), state()) -> nonce().
 get_nonce(Conn, #state{nonce=undefined, acme_srv=AcmeSrv}) ->
     letsencrypt_api:get_nonce(Conn, AcmeSrv);
 get_nonce(_, #state{nonce=Nonce}) ->
     Nonce.
 
+
+-spec bin(binary()|string()) -> binary().
 bin(X) when is_binary(X) ->
     X;
 bin(X) when is_list(X) ->
@@ -247,6 +267,7 @@ bin(X) when is_list(X) ->
 bin(_X) ->
     throw(invalid).
 
+-spec str(binary()) -> string().
 str(X) when is_binary(X) ->
     binary_to_list(X);
 str(_X) ->
