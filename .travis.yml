@@ -6,4 +6,4 @@ install:
     - ./rebar3 update
     - ./rebar3 compile
 script: 
-    - ./rebar3 dialyzer
+    - make dialize
