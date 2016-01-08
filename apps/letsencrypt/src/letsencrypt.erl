@@ -83,10 +83,11 @@ init(Args) ->
 
     {ok, idle, State2#state{key=Key, jws=Jws, intermediate_cert=IntermediateCert}}.
 
--spec mode_opts(webroot, list(atom()|{atom(),any()}), state()) -> {list(atom()|{atom(),any()}), state()}.
+-spec mode_opts(webroot, list(atom()|{atom(),any()})) -> {list(atom()|{atom(),any()}), state()}.
 mode_opts(Mode, Args) ->
     mode_opts(Mode, proplists:delete(mode, Args), #state{mode=Mode}).
 
+-spec mode_opts(webroot, list(atom()|{atom(),any()}), state()) -> {list(atom()|{atom(),any()}), state()}.
 mode_opts(webroot, [{webroot_path, Path}|Args], State) ->
     %TODO: check directory is writeable
     os:cmd("mkdir -p '"++ Path ++ ?WEBROOT_CHALLENGE_PATH ++ "'"),
@@ -127,7 +128,7 @@ getopts([Unk|_], _) ->
 %%
 %%
 
--spec certify(string()|binary(), []) -> {'ok', #{cert => binary(), key => binary}}|{'error','invalid'}.
+-spec certify(string()|binary(), []) -> {'ok', #{cert => binary(), key => binary()}}|{'error','invalid'}.
 certify(Domain, Opts) ->
     gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000),
     case wait_valid(10) of
