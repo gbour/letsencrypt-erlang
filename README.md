@@ -40,9 +40,31 @@ Both **/path/to/webroot** and **/path/to/certs** MUST be writtable by the erlang
 **Explanations**:
 
   During the certification process, letsencrypt server returns a challenge and then tries to query the challenge
-  file from the domain name asked to be certified.  
-  So letsencrypt-erlang is writing challenge file under **/path/to/webroot** directory.  
+  file from the domain name asked to be certified.
+  So letsencrypt-erlang is writing challenge file under **/path/to/webroot** directory.
   Finally, keys and certificates are written in **/path/to/certs** directory.
+
+
+## API
+NOTE: if _optional_ is not written, parameter is required
+
+* **letsencrypt:start(Params) :: starts letsencrypt client process**:
+Params is a list of parameters, choose from the followings:
+  * **staging** (optional): use staging API (generating fake certificates - default behavior is to use real API)
+  * **{mode, Mode}**: choose running mode, where **Mode** is **webroot** (only one available at now)
+  
+  Each mode has a specific list of parameters:
+  * _webroot_ mode:
+    * **{webroot_path, Path}**: pinpoint path to store challenge thumbprints.
+      Must be writable by erlang process, and available through your webserver as root path
+    * **{cert_path, Path}**: pinpoint path to store generated certificates.
+      Must be writable by erlang process
+
+
+* **letsencrypt:certify(Domain, Opts) :: generate a new certificate for the considered domain name**:
+  * **Domain**: domain name (string or binary)
+  * **Opts**: options list (empty for now)
+
 
 
 ## Action modes
