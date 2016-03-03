@@ -16,7 +16,7 @@
 -author("Guillaume Bour <guillaume@bour.cc>").
 -behaviour(gen_fsm).
 
--export([certify/2]).
+-export([make_cert/2, make_cert_bg/2]).
 -export([start/1, stop/0, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([idle/3, pending/3, valid/3]).
 
@@ -128,17 +128,39 @@ getopts([Unk|_], _) ->
 %%
 %%
 
--spec certify(string()|binary(), []) -> {'ok', #{cert => binary(), key => binary()}}|{'error','invalid'}.
-certify(Domain, Opts) ->
+-spec make_cert(string()|binary(), map()) -> {'ok', #{cert => binary(), key => binary()}}|
+                                             {'error','invalid'}|
+                                             async.
+make_cert(Domain, Opts=#{async := false}) ->
+    make_cert_bg(Domain, Opts);
+% default to async = true
+make_cert(Domain, Opts) ->
+    Pid = erlang:spawn(?MODULE, make_cert_bg, [Domain, Opts#{async => true}]),
+    async.
+
+-spec make_cert_bg(string()|binary(), map()) -> {'ok', map()}|{'error', 'invalid'}.
+make_cert_bg(Domain, Opts=#{async := Async}) ->
     gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000),
-    case wait_valid(10) of
+    Ret = case wait_valid(10) of
         ok ->
             gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
 
         Error ->
             gen_fsm:send_all_state_event({global, ?MODULE}, reset),
             Error
-    end.
+    end,
+
+    case Async of
+        true ->
+            Callback = maps:get(callback, Opts, fun(_) -> ok end),
+            Callback(Ret);
+
+        _    ->
+            ok
+    end,
+
+    Ret.
+
 
 -spec wait_valid(0..10) -> ok|{error, any()}.
 wait_valid(X) ->

@@ -26,7 +26,7 @@ Both **/path/to/webroot** and **/path/to/certs** MUST be writtable by the erlang
  $> ./rebar3 shell
  $erl> application:ensure_all_started(letsencrypt).
  $erl> letsencrypt:start([{mode,webroot},{webroot_path,"/path/to/webroot"},{cert_path,"/path/to/certs"}]).
- $erl> letsencrypt:certify(<<"mydomain.tld">>, []).
+ $erl> letsencrypt:make_cert(<<"mydomain.tld">>, #{async => false}).
 {ok, #{cert => <<"/path/to/certs/mydomain.tld.crt">>, key => <<"/path/to/certs/mydomain.tld.key">>}}
  $erl> ^C
 
@@ -61,9 +61,29 @@ Params is a list of parameters, choose from the followings:
       Must be writable by erlang process
 
 
-* **letsencrypt:certify(Domain, Opts) :: generate a new certificate for the considered domain name**:
+* **letsencrypt:make_cert(Domain, Opts) :: generate a new certificate for the considered domain name**:
   * **Domain**: domain name (string or binary)
-  * **Opts**: options list (empty for now)
+  * **Opts**: options map
+    * **async** = true|false (optional, _true_ by default): 
+    * **callback** (optional, used only when _async=true_): function called once certificate has been
+      generated.
+
+  examples:
+    * sync mode (shell is locked several seconds waiting result)
+  ```erlang
+    > letsencrypt:make_cert(<<"example.com">>, #{async => false}).
+    {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
+  ```
+    * async mode ('async' is written immediately)
+  ```erlang
+    > F = fun({Status, Result}) -> io:format("completed: ~p (result= ~p)~n") end,
+    > letsencrypt:make_cert(<<"example.com">>, #{async => true, callback => F}).
+    async
+    >
+    ...
+    completed: ok (result= #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>})
+  ```
+
 
 
 
