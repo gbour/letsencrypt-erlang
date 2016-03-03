@@ -105,14 +105,25 @@ challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
     Nonce.
 
 
--spec challenge(status, pid(), string()) -> {ok, atom()}.
+% 'ok'|'invalid' => make custom type (derived from atom())
+-spec challenge(status, pid(), string()) -> {'ok'|'invalid', atom()|binary()}.
 challenge(status, Conn, Path) ->
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
     #{body := Body} = Resp,
-    %io:format("challenge status: ~p", [Body]),
+    %io:format("challenge status: ~p~n", [Body]),
 
-    #{<<"status">> := Status} = jiffy:decode(Body, [return_maps]),
-    {ok, status(Status)}.
+    Payload = #{<<"status">> := Status} = jiffy:decode(Body, [return_maps]),
+    case status(Status) of
+        invalid ->
+            #{<<"detail">> := Err} = maps:get(<<"error">>, Payload, #{<<"detail">> => uncatched}),
+            {invalid, Err};
+
+        unknown ->
+            {invalid, unknown_state};
+
+        S       ->
+            {S, undefined}
+    end.
 
 
 -spec new_cert(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), letsencrypt:ssl_csr()) -> {binary(),letsencrypt:nonce()}.

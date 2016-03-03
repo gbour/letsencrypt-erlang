@@ -176,14 +176,14 @@ wait_valid(X) ->
 
 -spec wait_valid(0..10, 0..10) -> ok|{error, any()}.
 wait_valid(0,_) ->
-    {error, pending};
+    {error, timeout};
 wait_valid(Cnt,Max) ->
     case gen_fsm:sync_send_event({global, ?MODULE}, check, 15000) of
-        valid   -> ok;
-        pending ->
+        {valid  , _}   -> ok;
+        {pending, _}   ->
             timer:sleep(500*(Max-Cnt+1)),
             wait_valid(Cnt-1,Max);
-        Status  -> {error, Status}
+        {_      , Err} -> {error, Err}
     end.
 
 
@@ -233,10 +233,10 @@ pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) 
     LAcmDomain = length("https://"++AcmDomain),
     <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
 
-    {ok, Status} = letsencrypt_api:challenge(status, Conn, str(AcmPath)),
-    %io:format(":: pending -> ~p (~p)~n", [Status, AcmPath]),
+    Reply = {StateName, _} = letsencrypt_api:challenge(status, Conn, str(AcmPath)),
+    %io:format(":: challenge state -> ~p (~p)~n", [Reply, AcmPath]),
 
-    {reply, Status, Status, State#state{conn=Conn}}.
+    {reply, Reply, StateName, State#state{conn=Conn}}.
 
 valid(_, _, State=#state{mode=webroot, domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
                              acme_srv={_,_,BasePath}, intermediate_cert=IntermediateCert}) ->

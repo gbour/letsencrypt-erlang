@@ -79,11 +79,24 @@ Params is a list of parameters, choose from the followings:
   examples:
     * sync mode (shell is locked several seconds waiting result)
   ```erlang
-    > letsencrypt:make_cert(<<"example.com">>, #{async => false}).
+    > letsencrypt:make_cert(<<"mydomain.tld">>, #{async => false}).
     {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
 
+    > % domain tld is incorrect
     > letsencrypt:make_cert(<<"invalid.tld">>, #{async => false}).
     {error, <<"Error creating new authz :: Name does not end in a public suffix">>}
+
+    > % domain web server does not return challenge file (ie 404 error)
+    > letsencrypt:make_cert(<<"example.com">>, #{async => false}).
+    {error, <<"Invalid response from http://example.com/.well-known/acme-challenge/Bt"...>>}
+
+    > % returned challenge is wrong
+    > letsencrypt:make_cert(<<"example.com">>, #{async => false}).
+    {error,<<"Error parsing key authorization file: Invalid key authorization: 1 parts">>}
+    or
+    {error,<<"Error parsing key authorization file: Invalid key authorization: malformed token">>}
+    or
+    {error,<<"The key authorization file from the server did not match this challenge"...>>>}
   ```
     * async mode ('async' is written immediately)
   ```erlang
