@@ -50,7 +50,9 @@ new_reg(Conn, Path, Key, Jws) ->
     Nonce.
 
 
--spec new_authz(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary()) -> {map(), letsencrypt:nonce()}.
+-spec new_authz(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary()) ->
+    {'ok'   , map()               , letsencrypt:nonce()} |
+    {'error', 'uncatched'|binary(), letsencrypt:nonce()}.
 new_authz(Conn, Path, Key, Jws, Domain) ->
     Payload = #{
         resource => 'new-authz',
@@ -62,13 +64,22 @@ new_authz(Conn, Path, Key, Jws, Domain) ->
 
     Req = letsencrypt_jws:encode(Key, Jws, Payload),
     %io:format("req= ~p~n", [Req]),
-    {ok, Nonce, Body} = post(Conn, Path++"/new-authz", #{}, Req),
+    {ok, Nonce, JsonBody} = post(Conn, Path++"/new-authz", #{}, Req),
+    Body = jiffy:decode(JsonBody, [return_maps]),
 
-    % get http-01 challenge
-    #{<<"challenges">> := Challenges} = jiffy:decode(Body, [return_maps]),
-    [HttpChallenge] = lists:filter(fun(C) -> maps:get(<<"type">>, C, error) =:= <<"http-01">> end, Challenges),
+    case Body of
+        #{<<"status">> := <<"pending">>, <<"challenges">> := Challenges} ->
+            % get http-01 challenge
+            [HttpChallenge] = lists:filter(fun(C) -> maps:get(<<"type">>, C, error) =:= <<"http-01">> end,
+                                           Challenges),
+            {ok, HttpChallenge, Nonce};
 
-    {HttpChallenge, Nonce}.
+        #{<<"detail">> := Msg} ->
+            {error, Msg, Nonce};
+
+        _ ->
+            {error, uncatched, Nonce}
+    end.
 
 
 -spec challenge(pre , pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()) -> map();

@@ -140,14 +140,22 @@ make_cert(Domain, Opts) ->
 
 -spec make_cert_bg(string()|binary(), map()) -> {'ok', map()}|{'error', 'invalid'}.
 make_cert_bg(Domain, Opts=#{async := Async}) ->
-    gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000),
-    Ret = case wait_valid(10) of
-        ok ->
-            gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
+    Ret = case gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000) of
+        {error, Err} ->
+            %io:format("error: ~p~n", [Err]),
+            {error, Err};
 
-        Error ->
-            gen_fsm:send_all_state_event({global, ?MODULE}, reset),
-            Error
+        {ok, Path} ->
+            %io:format("ok: ~p~n", [Path]),
+
+            case wait_valid(10) of
+                ok ->
+                    gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
+
+                Error ->
+                    gen_fsm:send_all_state_event({global, ?MODULE}, reset),
+                    Error
+            end
     end,
 
     case Async of
@@ -188,24 +196,34 @@ idle({create, Domain, _Opts}, _,
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
 
-    Nonce2 = letsencrypt_api:new_reg(Conn, BasePath, Key, JWS#{nonce => Nonce}),
-    {HttpChallenge, Nonce3} = letsencrypt_api:new_authz(Conn, BasePath, Key, JWS#{nonce => Nonce2}, Domain),
-    ChallengeResponse = letsencrypt_api:challenge(pre, Conn, BasePath, Key, JWS, HttpChallenge),
-    
-    #{token := CFile, thumbprint := Thumbprint} = ChallengeResponse,
-    CPath = <<(bin(?WEBROOT_CHALLENGE_PATH))/binary, $/, CFile/binary>>,
-    %io:format("file= ~p, content= ~p~n", [CPath, Thumbprint]),
-    file:write_file(<<(bin(WPath))/binary, $/, CPath/binary>>, Thumbprint),
+    Nonce2   = letsencrypt_api:new_reg(Conn, BasePath, Key, JWS#{nonce => Nonce}),
+    AuthzRet = letsencrypt_api:new_authz(Conn, BasePath, Key, JWS#{nonce => Nonce2}, Domain),
+    %io:format("authzret= ~p~n", [AuthzRet]),
 
-    #{<<"uri">> := CUri} = HttpChallenge,
+    {Nstate, Nret, Nnonce, NChallenge} = case AuthzRet of
+        {error, Err, Nonce3} ->
+            {idle, {error, Err}, Nonce3, undefined};
 
-    BAcmDomain = bin("https://"++AcmDomain),
-    LAcmDomain = length("https://"++AcmDomain),
-    <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
+        {ok, HttpChallenge, Nonce3} ->
+            ChallengeResponse = letsencrypt_api:challenge(pre, Conn, BasePath, Key, JWS, HttpChallenge),
+            
+            #{token := CFile, thumbprint := Thumbprint} = ChallengeResponse,
+            CPath = <<(bin(?WEBROOT_CHALLENGE_PATH))/binary, $/, CFile/binary>>,
+            %io:format("file= ~p, content= ~p~n", [CPath, Thumbprint]),
+            file:write_file(<<(bin(WPath))/binary, $/, CPath/binary>>, Thumbprint),
 
-    Nonce4 = letsencrypt_api:challenge(post, Conn, str(AcmPath), Key, JWS#{nonce => Nonce3}, Thumbprint),
+            #{<<"uri">> := CUri} = HttpChallenge,
 
-    {reply, CPath, pending, State#state{conn=Conn, domain=Domain, nonce=Nonce4, challenge=ChallengeResponse#{uri => CUri}}}.
+            BAcmDomain = bin("https://"++AcmDomain),
+            LAcmDomain = length("https://"++AcmDomain),
+            <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
+
+            Nonce4 = letsencrypt_api:challenge(post, Conn, str(AcmPath), Key, JWS#{nonce => Nonce3}, Thumbprint),
+
+            {pending, {ok, CPath}, Nonce4, ChallengeResponse#{uri => CUri}}
+    end,
+
+    {reply, Nret, Nstate, State#state{conn=Conn, domain=Domain, nonce=Nnonce, challenge=NChallenge}}.
 
 pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) ->
     Conn  = get_conn(State),

@@ -60,6 +60,8 @@ Params is a list of parameters, choose from the followings:
     * **{cert_path, Path}**: pinpoint path to store generated certificates.
       Must be writable by erlang process
 
+  returns:
+    * **{ok, Pid}** with Pid the server process pid
 
 * **letsencrypt:make_cert(Domain, Opts) :: generate a new certificate for the considered domain name**:
   * **Domain**: domain name (string or binary)
@@ -68,15 +70,24 @@ Params is a list of parameters, choose from the followings:
     * **callback** (optional, used only when _async=true_): function called once certificate has been
       generated.
 
+  returns:
+    * in asynchronous mode, function returns **async**
+    * in synchronous mode, or in asynchronous callback function:  
+      * **{ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}** on success  
+      * **{error, Message}** on error
+
   examples:
     * sync mode (shell is locked several seconds waiting result)
   ```erlang
     > letsencrypt:make_cert(<<"example.com">>, #{async => false}).
     {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
+
+    > letsencrypt:make_cert(<<"invalid.tld">>, #{async => false}).
+    {error, <<"Error creating new authz :: Name does not end in a public suffix">>}
   ```
     * async mode ('async' is written immediately)
   ```erlang
-    > F = fun({Status, Result}) -> io:format("completed: ~p (result= ~p)~n") end,
+    > F = fun({Status, Result}) -> io:format("completed: ~p (result= ~p)~n") end.
     > letsencrypt:make_cert(<<"example.com">>, #{async => true, callback => F}).
     async
     >
