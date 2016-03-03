@@ -233,7 +233,7 @@ pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) 
     LAcmDomain = length("https://"++AcmDomain),
     <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
 
-    {ok, Status, _Nonce2} = letsencrypt_api:challenge(status, Conn, str(AcmPath)),
+    {ok, Status} = letsencrypt_api:challenge(status, Conn, str(AcmPath)),
     %io:format(":: pending -> ~p (~p)~n", [Status, AcmPath]),
 
     {reply, Status, Status, State#state{conn=Conn}}.

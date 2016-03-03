@@ -105,16 +105,14 @@ challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
     Nonce.
 
 
--spec challenge(status, pid(), string()) -> {ok, atom(), letsencrypt:nonce()}.
+-spec challenge(status, pid(), string()) -> {ok, atom()}.
 challenge(status, Conn, Path) ->
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
-    #{headers := RHeaders, body := Body} = Resp,
+    #{body := Body} = Resp,
     %io:format("challenge status: ~p", [Body]),
 
-    Nonce = proplists:get_value(<<"replay-nonce">>, RHeaders),
-
     #{<<"status">> := Status} = jiffy:decode(Body, [return_maps]),
-    {ok, status(Status), Nonce}.
+    {ok, status(Status)}.
 
 
 -spec new_cert(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), letsencrypt:ssl_csr()) -> {binary(),letsencrypt:nonce()}.
