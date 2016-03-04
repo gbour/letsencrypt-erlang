@@ -16,11 +16,12 @@
 -author("Guillaume Bour <guillaume@bour.cc>").
 -behaviour(gen_fsm).
 
--export([make_cert/2, make_cert_bg/2]).
+-export([make_cert/2, make_cert_bg/2, get_challenge/0]).
 -export([start/1, stop/0, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([idle/3, pending/3, valid/3]).
 
 % uri format compatible with shotgun library
+-type mode()           :: 'webroot'|'slave'.
 -type uri()            :: {Host::string(), Port::integer(), Path::string()}.
 -type nonce()          :: binary().
 -type jws()            :: #{'alg' => 'RS256', 'jwk' => map(), nonce => undefined|letsencrypt:nonce() }.
@@ -41,7 +42,7 @@
     key_file  = undefined           :: undefined | string(),
     cert_path = "/tmp"              :: string(),
 
-    mode = undefined                :: undefined | webroot,
+    mode = undefined                :: undefined | mode(),
     % mode = webroot
     webroot_path = undefined        :: undefined | string(),
 
@@ -83,11 +84,11 @@ init(Args) ->
 
     {ok, idle, State2#state{key=Key, jws=Jws, intermediate_cert=IntermediateCert}}.
 
--spec mode_opts(webroot, list(atom()|{atom(),any()})) -> {list(atom()|{atom(),any()}), state()}.
+-spec mode_opts(mode(), list(atom()|{atom(),any()})) -> {list(atom()|{atom(),any()}), state()}.
 mode_opts(Mode, Args) ->
     mode_opts(Mode, proplists:delete(mode, Args), #state{mode=Mode}).
 
--spec mode_opts(webroot, list(atom()|{atom(),any()}), state()) -> {list(atom()|{atom(),any()}), state()}.
+-spec mode_opts(mode(), list(atom()|{atom(),any()}), state()) -> {list(atom()|{atom(),any()}), state()}.
 mode_opts(webroot, [{webroot_path, Path}|Args], State) ->
     %TODO: check directory is writeable
     os:cmd("mkdir -p '"++ Path ++ ?WEBROOT_CHALLENGE_PATH ++ "'"),
@@ -186,13 +187,27 @@ wait_valid(Cnt,Max) ->
         {_      , Err} -> {error, Err}
     end.
 
+-spec get_challenge() -> error|map().
+get_challenge() ->
+    case catch gen_fsm:sync_send_event({global, ?MODULE}, get_challenge) of
+        % process not started, wrong state, ...
+        {'EXIT', Exc} ->
+            %io:format("exc: ~p~n", [Exc]),
+            error;
+
+        % challenge #{token => ..., thumbprint => ...}
+        C -> C
+    end.
+
 
 %%
 %% gen_server API
 %%
 
-idle({create, Domain, _Opts}, _, 
-        State=#state{mode=webroot, webroot_path=WPath, key=Key, jws=JWS, acme_srv={AcmDomain,_,BasePath}}) ->
+idle(get_challenge, _, State) ->
+    {reply, no_challenge, idle, State};
+
+idle({create, Domain, Opts}, _, State=#state{mode=Mode, key=Key, jws=JWS, acme_srv={AcmDomain,_,BasePath}}) ->
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
 
@@ -210,7 +225,7 @@ idle({create, Domain, _Opts}, _,
             #{token := CFile, thumbprint := Thumbprint} = ChallengeResponse,
             CPath = <<(bin(?WEBROOT_CHALLENGE_PATH))/binary, $/, CFile/binary>>,
             %io:format("file= ~p, content= ~p~n", [CPath, Thumbprint]),
-            file:write_file(<<(bin(WPath))/binary, $/, CPath/binary>>, Thumbprint),
+            challenge(pre, Mode, State, CPath, Thumbprint),
 
             #{<<"uri">> := CUri} = HttpChallenge,
 
@@ -225,7 +240,13 @@ idle({create, Domain, _Opts}, _,
 
     {reply, Nret, Nstate, State#state{conn=Conn, domain=Domain, nonce=Nnonce, challenge=NChallenge}}.
 
-pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) ->
+
+pending(get_challenge, _, State=#state{challenge=Challenge}) ->
+    {reply, Challenge, pending, State};
+
+pending(Action, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) ->
+	%io:format("pending: ~p~n", [Action]),
+
     Conn  = get_conn(State),
     %Nonce = get_nonce(Conn, State),
 
@@ -238,7 +259,8 @@ pending(_, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) 
 
     {reply, Reply, StateName, State#state{conn=Conn}}.
 
-valid(_, _, State=#state{mode=webroot, domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
+
+valid(_, _, State=#state{domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
                              acme_srv={_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
 
     Conn  = get_conn(State),
@@ -313,4 +335,10 @@ str(X) when is_binary(X) ->
     binary_to_list(X);
 str(_X) ->
     throw(invalid).
+
+challenge(pre, webroot, #state{webroot_path=WPath}, CPath, Thumbprint) ->
+    file:write_file(<<(bin(WPath))/binary, $/, CPath/binary>>, Thumbprint);
+
+challenge(pre, slave, _, _, _) ->
+    ok.
 

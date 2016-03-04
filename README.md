@@ -51,14 +51,14 @@ NOTE: if _optional_ is not written, parameter is required
 * **letsencrypt:start(Params) :: starts letsencrypt client process**:
 Params is a list of parameters, choose from the followings:
   * **staging** (optional): use staging API (generating fake certificates - default behavior is to use real API)
-  * **{mode, Mode}**: choose running mode, where **Mode** is **webroot** (only one available at now)
+  * **{mode, Mode}**: choose running mode, where **Mode** is one of **webroot**, **slave**
+  * **{cert_path, Path}**: pinpoint path to store generated certificates.
+    Must be writable by erlang process
   
-  Each mode has a specific list of parameters:
+  Mode-specific parameters:
   * _webroot_ mode:
     * **{webroot_path, Path}**: pinpoint path to store challenge thumbprints.
       Must be writable by erlang process, and available through your webserver as root path
-    * **{cert_path, Path}**: pinpoint path to store generated certificates.
-      Must be writable by erlang process
 
   returns:
     * **{ok, Pid}** with Pid the server process pid
@@ -114,6 +114,31 @@ Params is a list of parameters, choose from the followings:
 ## Action modes
 
 ### webroot
+
+### slave
+
+Use this mode if you already have a cowboy server running on port 80 in your application
+
+```erlang
+
+on_complete({State, Data}) ->
+    io:format("letsencrypt completed: ~p (data: ~p)~n", [State, Data]).
+
+main() ->
+    Dispatch = cowboy_router:compile([
+        {'_', [
+            {<<"/.well-known/acme-challenge/:token">>, letsencrypt_cowboy_handler, []}
+        ]}
+    ]),
+    {ok, _} = cowboy:start_http(my_http_listener, 1, [{port, 80}],
+        [{env, [{dispatch, Dispatch}]}]
+    ),
+
+    letsencrypt:start([{mode,slave}, staging, {cert_path,"/path/to/certs"}]),
+    letsencrypt:make_cert(<<"mydomain.tld">>, #{callback => fun on_complete/1}),
+
+    ok.
+```
 
 ### other modes
 **TDB**
