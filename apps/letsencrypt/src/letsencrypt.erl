@@ -21,7 +21,7 @@
 -export([idle/3, pending/3, valid/3]).
 
 % uri format compatible with shotgun library
--type mode()           :: 'webroot'|'slave'.
+-type mode()           :: 'webroot'|'slave'|'standalone'.
 -type uri()            :: {Host::string(), Port::integer(), Path::string()}.
 -type nonce()          :: binary().
 -type jws()            :: #{'alg' => 'RS256', 'jwk' => map(), nonce => undefined|letsencrypt:nonce() }.
@@ -35,7 +35,7 @@
 -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
 -define(INTERMEDIATE_CERT_URL, {"letsencrypt.org", 443, "/certs/lets-encrypt-x1-cross-signed.pem"}).
 
--define(WEBROOT_CHALLENGE_PATH, "/.well-known/acme-challenge/").
+-define(WEBROOT_CHALLENGE_PATH, <<"/.well-known/acme-challenge">>).
 
 -record(state, {
     acme_srv = ?DEFAULT_API_URL     :: uri(),
@@ -45,6 +45,8 @@
     mode = undefined                :: undefined | mode(),
     % mode = webroot
     webroot_path = undefined        :: undefined | string(),
+    % mode = standalone
+    port = 80                       :: integer(),
 
     intermediate_cert = undefined   :: undefined | binary(),
 
@@ -54,6 +56,7 @@
     domain = undefined              :: undefined | binary(),
     key   = undefined               :: undefined | ssl_privatekey(),
     jws   = undefined               :: undefined | jws(),
+
     challenge = undefined           :: undefined | map()
 }).
 
@@ -91,9 +94,12 @@ mode_opts(Mode, Args) ->
 -spec mode_opts(mode(), list(atom()|{atom(),any()}), state()) -> {list(atom()|{atom(),any()}), state()}.
 mode_opts(webroot, [{webroot_path, Path}|Args], State) ->
     %TODO: check directory is writeable
-    os:cmd("mkdir -p '"++ Path ++ ?WEBROOT_CHALLENGE_PATH ++ "'"),
+    os:cmd(string:join(["mkdir -p '", Path, str(?WEBROOT_CHALLENGE_PATH), "'"], "")),
 
     mode_opts(webroot, Args, State#state{webroot_path=Path});
+mode_opts(standalone, [{port, Port}|Args], State) ->
+    mode_opts(standalone, Args, State#state{port=Port});
+
 % general opts, we ignore it for now
 mode_opts(M, [H|Args], State) ->
     {Args2, State2} = mode_opts(M, Args, State),
@@ -146,7 +152,7 @@ make_cert_bg(Domain, Opts=#{async := Async}) ->
             %io:format("error: ~p~n", [Err]),
             {error, Err};
 
-        {ok, Path} ->
+        ok ->
             %io:format("ok: ~p~n", [Path]),
 
             case wait_valid(10) of
@@ -169,7 +175,6 @@ make_cert_bg(Domain, Opts=#{async := Async}) ->
     end,
 
     Ret.
-
 
 -spec wait_valid(0..10) -> ok|{error, any()}.
 wait_valid(X) ->
@@ -221,21 +226,18 @@ idle({create, Domain, Opts}, _, State=#state{mode=Mode, key=Key, jws=JWS, acme_s
 
         {ok, HttpChallenge, Nonce3} ->
             ChallengeResponse = letsencrypt_api:challenge(pre, Conn, BasePath, Key, JWS, HttpChallenge),
+            challenge_init(Mode, State, ChallengeResponse),
             
-            #{token := CFile, thumbprint := Thumbprint} = ChallengeResponse,
-            CPath = <<(bin(?WEBROOT_CHALLENGE_PATH))/binary, $/, CFile/binary>>,
-            %io:format("file= ~p, content= ~p~n", [CPath, Thumbprint]),
-            challenge(pre, Mode, State, CPath, Thumbprint),
-
             #{<<"uri">> := CUri} = HttpChallenge,
 
             BAcmDomain = bin("https://"++AcmDomain),
             LAcmDomain = length("https://"++AcmDomain),
             <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
 
+            #{thumbprint := Thumbprint} = ChallengeResponse,
             Nonce4 = letsencrypt_api:challenge(post, Conn, str(AcmPath), Key, JWS#{nonce => Nonce3}, Thumbprint),
 
-            {pending, {ok, CPath}, Nonce4, ChallengeResponse#{uri => CUri}}
+            {pending, ok, Nonce4, ChallengeResponse#{uri => CUri}}
     end,
 
     {reply, Nret, Nstate, State#state{conn=Conn, domain=Domain, nonce=Nnonce, challenge=NChallenge}}.
@@ -260,8 +262,10 @@ pending(Action, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,
     {reply, Reply, StateName, State#state{conn=Conn}}.
 
 
-valid(_, _, State=#state{domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
+valid(_, _, State=#state{mode=Mode, domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
                              acme_srv={_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
+
+    challenge_destroy(Mode),
 
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
@@ -275,21 +279,18 @@ valid(_, _, State=#state{domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
 
     {reply, {ok, #{key => bin(KeyFile), cert => bin(CertFile)}}, idle, State#state{conn=Conn, nonce=Nonce2}}.
 
-%handle_call({create, Domain, Opts}, _, State) ->
-%    Conn = get_conn(State),
-%    Nonce = get_nonce(State),
-%
-%
-%    {reply, ok, State#state{conn=Conn}};
+%%%
+%%% 
+%%%
 
-handle_event(reset, StateName, State) ->
+handle_event(reset, StateName, State=#state{mode=Mode}) ->
     %io:format("reset from ~p state~n", [StateName]),
+    challenge_destroy(Mode),
     {next_state, idle, State};
 
 handle_event(_, StateName, State) ->
     io:format("async evt: ~p~n", [StateName]),
     {next_state, StateName, State}.
-
 
 handle_sync_event(_,_, StateName, State) ->
     io:format("sync evt: ~p~n", [StateName]),
@@ -330,15 +331,40 @@ bin(X) when is_list(X) ->
 bin(_X) ->
     throw(invalid).
 
+
 -spec str(binary()) -> string().
 str(X) when is_binary(X) ->
     binary_to_list(X);
 str(_X) ->
     throw(invalid).
 
-challenge(pre, webroot, #state{webroot_path=WPath}, CPath, Thumbprint) ->
-    file:write_file(<<(bin(WPath))/binary, $/, CPath/binary>>, Thumbprint);
 
-challenge(pre, slave, _, _, _) ->
+-spec challenge_init(mode(), state(), map()) -> ok.
+challenge_init(webroot, #state{webroot_path=WPath}, #{token := Token, thumbprint := Thumbprint}) ->
+    file:write_file(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>, Thumbprint);
+challenge_init(slave, _, _) ->
+    ok;
+challenge_init(standalone, #state{port=Port}, _) ->
+	% be sure handler is not already running
+	cowboy:stop_listener(letsencrypt_cowboy_listener),
+
+    Dispatch = cowboy_router:compile([
+        {'_', [{<<?WEBROOT_CHALLENGE_PATH/binary, "/:token">>, letsencrypt_cowboy_handler, []}]}
+    ]),
+
+    {ok, _} = cowboy:start_http(letsencrypt_cowboy_listener, 1,
+		[{port, Port}],
+        [{env, [{dispatch, Dispatch}]}]
+    ),
+
     ok.
+
+
+-spec challenge_destroy(mode()) -> ok.
+challenge_destroy(standalone) ->
+	% stop http server
+	cowboy:stop_listener(letsencrypt_cowboy_listener),
+    ok;
+challenge_destroy(_) ->
+	ok.
 

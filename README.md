@@ -51,7 +51,8 @@ NOTE: if _optional_ is not written, parameter is required
 * **letsencrypt:start(Params) :: starts letsencrypt client process**:
 Params is a list of parameters, choose from the followings:
   * **staging** (optional): use staging API (generating fake certificates - default behavior is to use real API)
-  * **{mode, Mode}**: choose running mode, where **Mode** is one of **webroot**, **slave**
+  * **{mode, Mode}**: choose running mode, where **Mode** is one of **webroot**, **slave** or
+    **standalone**
   * **{cert_path, Path}**: pinpoint path to store generated certificates.
     Must be writable by erlang process
   
@@ -59,6 +60,9 @@ Params is a list of parameters, choose from the followings:
   * _webroot_ mode:
     * **{webroot_path, Path}**: pinpoint path to store challenge thumbprints.
       Must be writable by erlang process, and available through your webserver as root path
+
+  * _standalone_ mode:
+    * **{port, Port}** (optional, default to *80*): tcp port to listen for http query for challenge validation
 
   returns:
     * **{ok, Pid}** with Pid the server process pid
@@ -140,8 +144,21 @@ main() ->
     ok.
 ```
 
-### other modes
-**TDB**
-	
+### standalone
+
+When you have no running http server. letsencrypt-erlang will start its own webserver temporarily for
+challenge validation.
+
+```erlang
+
+on_complete({State, Data}) ->
+    io:format("letsencrypt completed: ~p (data: ~p)~n", [State, Data]).
+
+main() ->
+    letsencrypt:start([{mode,standalone}, staging, {cert_path,"/path/to/certs"}, {port, 80)]),
+    letsencrypt:make_cert(<<"mydomain.tld">>, #{callback => fun on_complete/1}),
+
+    ok.
+```
 
 ## Step by Step
