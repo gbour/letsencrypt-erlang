@@ -5,6 +5,29 @@ Let's Encrypt client library for Erlang
 
 ## Overview
 
+Features:
+
+- [ ] registering client (with email)
+- [x] issuing RSA certificate
+- [ ] revoking certificate
+- [ ] alternate domain names (SAN)
+- [ ] allow EC keys
+- [ ] choose RSA key length
+- [ ] unittests
+
+Modes
+- [x] webroot
+- [ ] slave (cowboy handler)
+- [ ] standalone
+
+Validation challenges
+- [x] http-01 (http)
+- [ ] tls-sni-01 (https)
+- [ ] dns-01
+- [ ] proof-of-possession-01
+
+## Prerequisites
+- openssl (required to generate RSA key and certificate request)
 
 ## Building
 
@@ -109,14 +132,6 @@ Params is a list of parameters, choose from the followings:
   ```
 
 
+## License
 
-
-## Action modes
-
-### webroot
-
-### other modes
-**TDB**
-	
-
-## Step by Step
+letsencrypt-erlang is distributed under APACHE 2.0 license.
