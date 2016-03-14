@@ -6,7 +6,8 @@
    [kernel,
     stdlib,
     shotgun,
-    jiffy
+    jiffy,
+    cowboy
    ]},
   {env,[]},
   {modules, []},
