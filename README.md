@@ -17,8 +17,8 @@ Features:
 
 Modes
 - [x] webroot
-- [ ] slave (cowboy handler)
-- [ ] standalone
+- [x] slave (cowboy handler)
+- [x] standalone
 
 Validation challenges
 - [x] http-01 (http)
@@ -99,7 +99,7 @@ Params is a list of parameters, choose from the followings:
 
   returns:
     * in asynchronous mode, function returns **async**
-    * in synchronous mode, or in asynchronous callback function:  
+    * in synchronous mode, or as asynchronous callback function parameter:  
       * **{ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}** on success  
       * **{error, Message}** on error
 
@@ -140,14 +140,34 @@ Params is a list of parameters, choose from the followings:
 
 ### webroot
 
+*When you're running a webserver (ie apache or nginx) listening on public http port*.
+
+```erlang
+on_complete({State, Data}) ->
+    io:format("letsencrypt certicate issued: ~p (data: ~p)~n", [State, Data]),
+    case State of
+        ok ->
+            io:format("reloading nginx...~n"),
+            os:cmd("sudo systemctl reload nginx");
+
+        _  -> pass
+    end.
+
+main() ->
+    letsencrypt:start([{mode,webroot}, staging, {cert_path,"/path/to/certs"}, {webroot_path, "/var/www/html"]),
+    letsencrypt:make_cert(<<"mydomain.tld">>, #{callback => fun on_complete/1}),
+
+    ok.
+```
+
 ### slave
 
-Use this mode if you already have a cowboy server running on port 80 in your application
+*When your erlang application is already running a cowboy server listening on public http port*.
 
 ```erlang
 
 on_complete({State, Data}) ->
-    io:format("letsencrypt completed: ~p (data: ~p)~n", [State, Data]).
+    io:format("letsencrypt certificate issued: ~p (data: ~p)~n", [State, Data]).
 
 main() ->
     Dispatch = cowboy_router:compile([
@@ -167,13 +187,15 @@ main() ->
 
 ### standalone
 
-When you have no running http server. letsencrypt-erlang will start its own webserver temporarily for
-challenge validation.
+*When you have no live http server running on your server*.  
+
+letsencrypt-erlang will start its own webserver just enough time to validate the challenge, then will
+stop it immediately after that.
 
 ```erlang
 
 on_complete({State, Data}) ->
-    io:format("letsencrypt completed: ~p (data: ~p)~n", [State, Data]).
+    io:format("letsencrypt certificate issued: ~p (data: ~p)~n", [State, Data]).
 
 main() ->
     letsencrypt:start([{mode,standalone}, staging, {cert_path,"/path/to/certs"}, {port, 80)]),
@@ -183,7 +205,7 @@ main() ->
 ```
 
 
-## License
+## License
 
 letsencrypt-erlang is distributed under APACHE 2.0 license.
 
