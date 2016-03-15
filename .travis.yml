@@ -17,10 +17,15 @@ services:
 before_install:
     - git clone --depth=1 https://github.com/letsencrypt/boulder.git boulder
     - cd boulder && docker-compose build
+    - cd $TRAVIS_BUILD_DIR
 
 install:
     - ./rebar3 update
     - ./rebar3 compile
+
+before_script:
+    - webfsd -p 3099 -r boulder/ -F -L -&
+    - boulder/test/run-docker.sh&
 
 script: 
     - make dialize
