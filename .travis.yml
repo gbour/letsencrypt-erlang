@@ -1,9 +1,26 @@
+sudo: required
+
 language: erlang
+
 otp_release:
     - 18.2.1
     - 17.5
+
+addons:
+    apt:
+        packages:
+            - webfs
+
+services:
+    - docker
+
+before_install:
+    - git clone --depth=1 https://github.com/letsencrypt/boulder.git boulder
+    - cd boulder && docker-compose build
+
 install:
     - ./rebar3 update
     - ./rebar3 compile
+
 script: 
     - make dialize
