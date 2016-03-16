@@ -18,11 +18,15 @@
 -export([connect/1, close/1, get_nonce/2, new_reg/4, new_authz/5, challenge/6, challenge/3]).
 -export([new_cert/5, get_intermediate/1]).
 
--define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
+-ifdef(TEST).
+    -define(AGREEMENT_URL  , <<"http://127.0.0.1:4001/terms/v1">>).
+-else.
+    -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
+-endif.
 
 -spec connect(letsencrypt:uri()) -> pid().
-connect({Domain, 443, _}) ->
-    {ok, Conn} = shotgun:open(Domain, 443, https),
+connect({Proto, Domain, Port, _}) ->
+    {ok, Conn} = shotgun:open(Domain, Port, Proto),
     Conn.
 
 
@@ -31,8 +35,8 @@ close(Conn) ->
     shotgun:close(Conn).
 
 
--spec get_nonce(pid(), letsencrypt:uri()) -> binary().
-get_nonce(Conn, {_,_,BasePath}) ->
+-spec get_nonce(pid(), string()) -> binary().
+get_nonce(Conn, BasePath) ->
     {ok, #{headers := Headers}} = shotgun:get(Conn, BasePath++"/new-reg", #{}, #{}),
     proplists:get_value(<<"replay-nonce">>, Headers).
 
@@ -152,8 +156,8 @@ post(Conn, Path, Headers, Content) ->
 
 
 -spec get_intermediate(letsencrypt:uri()) -> {ok, binary()}.
-get_intermediate({Domain, Port, Path}) ->
-    {ok, Conn} = shotgun:open(Domain, Port, https),
+get_intermediate(X={Proto, Domain, Port, Path}) ->
+    {ok, Conn} = shotgun:open(Domain, Port, Proto),
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
 
     %io:format("resp= ~p~n", [Resp]),

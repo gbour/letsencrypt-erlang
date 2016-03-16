@@ -22,18 +22,23 @@
 
 % uri format compatible with shotgun library
 -type mode()           :: 'webroot'|'slave'|'standalone'.
--type uri()            :: {Host::string(), Port::integer(), Path::string()}.
+-type uri()            :: {Proto::(http|https), Host::string(), Port::integer(), Path::string()}.
 -type nonce()          :: binary().
 -type jws()            :: #{'alg' => 'RS256', 'jwk' => map(), nonce => undefined|letsencrypt:nonce() }.
 -type ssl_privatekey() :: #{'raw' => crypto:rsa_private(), 'b64' => {binary(), binary()}, 'file' => string()}.
 -type ssl_csr()        :: binary().
 
 
-
--define(STAGING_API_URL, {"acme-staging.api.letsencrypt.org", 443, "/acme/"}).
--define(DEFAULT_API_URL, {"acme-v01.api.letsencrypt.org"    , 443, "/acme/"}).
--define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
--define(INTERMEDIATE_CERT_URL, {"letsencrypt.org", 443, "/certs/lets-encrypt-x1-cross-signed.pem"}).
+-ifdef(TEST).
+    -define(STAGING_API_URL      , "http://127.0.0.1:4000/acme").
+    -define(DEFAULT_API_URL      , "").
+    -define(INTERMEDIATE_CERT_URL, "http://127.0.0.1:3099/test/test-ca.pem").
+-else.
+    -define(STAGING_API_URL      , "https://acme-staging.api.letsencrypt.org/acme").
+    -define(DEFAULT_API_URL      , "https://acme-v01.api.letsencrypt.org/acme").
+    -define(INTERMEDIATE_CERT_URL, "https://letsencrypt.org/certs/lets-encrypt-x1-cross-signed.pem").
+-endif.
+%-define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
 
 -define(WEBROOT_CHALLENGE_PATH, <<"/.well-known/acme-challenge">>).
 
@@ -79,13 +84,17 @@ init(Args) ->
     State2 = getopts(Args2, State),
     %io:format("state= ~p~n", [State2]),
 
+    {ok, {Proto, _, Host, Port, Path, _}} = http_uri:parse(State2#state.acme_srv),
+    AcmeSrv = {Proto, Host, Port, Path},
+
     % loading private key into memory
     Key = letsencrypt_ssl:private_key(State2#state.key_file, State2#state.cert_path),
     Jws = letsencrypt_jws:init(Key),
 
-    {ok, IntermediateCert} = letsencrypt_api:get_intermediate(?INTERMEDIATE_CERT_URL),
+    {ok, {IProto, _, IHost, IPort, IPath, _}} = http_uri:parse(?INTERMEDIATE_CERT_URL),
+    {ok, IntermediateCert} = letsencrypt_api:get_intermediate({IProto, IHost, IPort, IPath}),
 
-    {ok, idle, State2#state{key=Key, jws=Jws, intermediate_cert=IntermediateCert}}.
+    {ok, idle, State2#state{acme_srv=AcmeSrv, key=Key, jws=Jws, intermediate_cert=IntermediateCert}}.
 
 -spec mode_opts(mode(), list(atom()|{atom(),any()})) -> {list(atom()|{atom(),any()}), state()}.
 mode_opts(Mode, Args) ->
@@ -212,7 +221,8 @@ get_challenge() ->
 idle(get_challenge, _, State) ->
     {reply, no_challenge, idle, State};
 
-idle({create, Domain, Opts}, _, State=#state{mode=Mode, key=Key, jws=JWS, acme_srv={AcmDomain,_,BasePath}}) ->
+idle({create, Domain, Opts}, _, 
+        State=#state{mode=Mode, key=Key, jws=JWS, acme_srv={Proto,AcmeDomain,AcmePort,BasePath}}) ->
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
 
@@ -229,15 +239,19 @@ idle({create, Domain, Opts}, _, State=#state{mode=Mode, key=Key, jws=JWS, acme_s
             challenge_init(Mode, State, ChallengeResponse),
             
             #{<<"uri">> := CUri} = HttpChallenge,
+            % NOTE: we assume we are on same server than acme_srv, so we reuse Conn
+            case http_uri:parse(str(CUri)) of
+                % matching acme_srv proto, domain & port
+                {ok, {Proto,_,AcmeDomain,AcmePort,CUriPath,_}} ->
+                    #{thumbprint := Thumbprint} = ChallengeResponse,
+                    Nonce4 = letsencrypt_api:challenge(post, Conn, CUriPath, Key, JWS#{nonce => Nonce3}, 
+                                                       Thumbprint),
 
-            BAcmDomain = bin("https://"++AcmDomain),
-            LAcmDomain = length("https://"++AcmDomain),
-            <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
+                    {pending, ok, Nonce4, ChallengeResponse#{uri => CUriPath}};
 
-            #{thumbprint := Thumbprint} = ChallengeResponse,
-            Nonce4 = letsencrypt_api:challenge(post, Conn, str(AcmPath), Key, JWS#{nonce => Nonce3}, Thumbprint),
-
-            {pending, ok, Nonce4, ChallengeResponse#{uri => CUri}}
+                _ ->
+                    {idle, {error, <<"invalid ", CUri/binary, " challenge uri">>}, Nonce3, undefined}
+            end
     end,
 
     {reply, Nret, Nstate, State#state{conn=Conn, domain=Domain, nonce=Nnonce, challenge=NChallenge}}.
@@ -246,24 +260,20 @@ idle({create, Domain, Opts}, _, State=#state{mode=Mode, key=Key, jws=JWS, acme_s
 pending(get_challenge, _, State=#state{challenge=Challenge}) ->
     {reply, Challenge, pending, State};
 
-pending(Action, _, State=#state{challenge=#{uri := CUri}, acme_srv={AcmDomain,_,_}}) ->
+pending(Action, _, State=#state{challenge=#{uri := CUriPath}}) ->
 	%io:format("pending: ~p~n", [Action]),
 
     Conn  = get_conn(State),
     %Nonce = get_nonce(Conn, State),
 
-    BAcmDomain = bin("https://"++AcmDomain),
-    LAcmDomain = length("https://"++AcmDomain),
-    <<BAcmDomain:LAcmDomain/binary, AcmPath/binary>> = CUri,
-
-    Reply = {StateName, _} = letsencrypt_api:challenge(status, Conn, str(AcmPath)),
+    Reply = {StateName, _} = letsencrypt_api:challenge(status, Conn, CUriPath),
     %io:format(":: challenge state -> ~p (~p)~n", [Reply, AcmPath]),
 
     {reply, Reply, StateName, State#state{conn=Conn}}.
 
 
 valid(_, _, State=#state{mode=Mode, domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
-                             acme_srv={_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
+                             acme_srv={_,_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
 
     challenge_destroy(Mode),
 
@@ -317,8 +327,8 @@ get_conn(#state{conn=Conn}) ->
 
 
 -spec get_nonce(pid(), state()) -> nonce().
-get_nonce(Conn, #state{nonce=undefined, acme_srv=AcmeSrv}) ->
-    letsencrypt_api:get_nonce(Conn, AcmeSrv);
+get_nonce(Conn, #state{nonce=undefined, acme_srv={_,_,_,Path}}) ->
+    letsencrypt_api:get_nonce(Conn, Path);
 get_nonce(_, #state{nonce=Nonce}) ->
     Nonce.
 
@@ -335,6 +345,8 @@ bin(_X) ->
 -spec str(binary()) -> string().
 str(X) when is_binary(X) ->
     binary_to_list(X);
+str(X) when is_integer(X) ->
+    integer_to_list(X);
 str(_X) ->
     throw(invalid).
 
