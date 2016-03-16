@@ -20,8 +20,10 @@
 
 -ifdef(TEST).
     -define(AGREEMENT_URL  , <<"http://127.0.0.1:4001/terms/v1">>).
+    -define(debug(Fmt, Args), io:format(Fmt, Args)).
 -else.
     -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
+    -define(debug(Fmt, Args), ok).
 -endif.
 
 -spec connect(letsencrypt:uri()) -> pid().
@@ -145,10 +147,10 @@ new_cert(Conn, Path, Key, Jws, Csr) ->
 
 -spec post(pid(), string(), map(), binary()) -> {ok, letsencrypt:nonce(), binary()}.
 post(Conn, Path, Headers, Content) ->
-    %io:format("== POST ~p~n", [Path]),
+    ?debug("== POST ~p~n", [Path]),
     {ok, Resp} = shotgun:post(Conn, Path, Headers#{<<"Content-Type">> => <<"application/jose+json">>}, 
                               Content, #{}),
-    %io:format("resp= ~p~n", [Resp]),
+    ?debug("resp= ~p~n", [Resp]),
     #{body := Body, headers := RHeaders, status_code := _Status} = Resp,
 
     Nonce = proplists:get_value(<<"replay-nonce">>, RHeaders),
