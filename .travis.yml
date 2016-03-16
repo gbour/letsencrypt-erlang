@@ -40,4 +40,5 @@ before_script:
 
 script: 
     - make dialize
-    - http GET http://127.0.0.1:3099/test/test-ca.pem
+    #- http GET http://127.0.0.1:3099/test/test-ca.pem
+    - ./rebar3 ct
