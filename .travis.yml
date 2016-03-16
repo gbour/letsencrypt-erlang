@@ -10,6 +10,7 @@ addons:
     apt:
         packages:
             - httpie
+            - elinks
 
 services:
     - docker
@@ -42,3 +43,7 @@ script:
     - make dialize
     #- http GET http://127.0.0.1:3099/test/test-ca.pem
     - ./rebar3 ct
+
+after_failure:
+    - elinks -dump 1 _build/test/logs/ct_run.*/_build.test.logs/run.*/suite.log.html
+    - elinks -dump 1 _build/test/logs/ct_run.*/_build.test.logs/run.*/letsencrypt_suite.test_*
