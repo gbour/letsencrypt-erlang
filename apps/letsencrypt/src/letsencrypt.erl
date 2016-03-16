@@ -43,7 +43,7 @@
 -define(WEBROOT_CHALLENGE_PATH, <<"/.well-known/acme-challenge">>).
 
 -record(state, {
-    acme_srv = ?DEFAULT_API_URL     :: uri(),
+    acme_srv = ?DEFAULT_API_URL     :: uri() | string(),
     key_file  = undefined           :: undefined | string(),
     cert_path = "/tmp"              :: string(),
 
