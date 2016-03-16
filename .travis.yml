@@ -34,7 +34,7 @@ before_script:
     - averell/averell -p 3099 -v boulder&
     #
     - sed -i 's/-it/-i/' boulder/test/run-docker.sh
-    - boulder/test/run-docker.sh&
+    - boulder/test/run-docker.sh > /tmp/boulder.log&
     # waiting for boulder being fully started
     - r=1; while [ $r -ne 0 ] ; do http http://localhost:4000/directory 2>/dev/null; r=$?; sleep 5; done
 
@@ -47,3 +47,5 @@ script:
 after_failure:
     - elinks -dump 1 _build/test/logs/ct_run.*/_build.test.logs/run.*/suite.log.html
     - elinks -dump 1 _build/test/logs/ct_run.*/_build.test.logs/run.*/letsencrypt_suite.test_*
+    - elinks -dump 1 _build/test/logs/ct_run.*/_build.test.logs/run.*/unexpected_io.log.html
+    - cat /tmp/boulder.log
