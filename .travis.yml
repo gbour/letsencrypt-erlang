@@ -9,12 +9,17 @@ otp_release:
 addons:
     apt:
         packages:
-            - webfs
+            - httpie
 
 services:
     - docker
 
 before_install:
+    # small files webservers
+    - git clone --depth=1 https://github.com/jeanparpaillon/averell.git averell
+    - cd averell && make && make
+    - cd $TRAVIS_BUILD_DIR
+    # letsencrypt server
     - git clone --depth=1 https://github.com/letsencrypt/boulder.git boulder
     - cd boulder && docker-compose build
     - cd $TRAVIS_BUILD_DIR
@@ -24,8 +29,15 @@ install:
     - ./rebar3 compile
 
 before_script:
-    - webfsd -p 3099 -r boulder/ -F -L -&
+    # serve CA certificate
+    - averell/averell -p 3099 -v boulder&
+    #
+    - sed -i 's/-it/-i/' boulder/test/run-docker.sh
     - boulder/test/run-docker.sh&
+    # waiting for boulder being fully started
+    - r=1; while [ $r -ne 0 ] ; do http http://localhost:4000/directory 2>/dev/null; r=$?; sleep 5; done
+
 
 script: 
     - make dialize
+    - http GET http://127.0.0.1:3099/test/test-ca.pem
