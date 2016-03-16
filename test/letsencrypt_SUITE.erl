@@ -26,6 +26,7 @@ groups() ->
         {all, [], [
             test_standalone
             ,test_slave
+            ,test_webroot
         ]}
     ].
 
@@ -66,4 +67,28 @@ test_slave(_) ->
     cowboy:stop_listener(my_http_listener),
 
     ok.
+
+test_webroot(_) ->
+    application:ensure_all_started(letsencrypt),
+    cowboy:stop_listener(webroot_listener),
+
+    % use cowboy to serve acme challenge file
+    Dispatch = cowboy_router:compile([
+        {'_', [
+            {<<"/.well-known/acme-challenge/:token">>, test_webroot_handler, []}
+        ]}
+    ]),
+    {ok, _} = cowboy:start_http(my_http_listener, 1, [{port, ?PORT}],
+        [{env, [{dispatch, Dispatch}]}]
+    ),
+
+    {ok, Pid} = letsencrypt:start([{mode, webroot}, staging, {webroot_path, "/tmp"}, {cert_path, "/tmp"}]),
+    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, #{async => false}),
+
+    %NOTE: is throwing a noproc exception, don't know why
+    catch letsencrypt:stop(),
+    cowboy:stop_listener(my_http_listener),
+
+    ok.
+
 
