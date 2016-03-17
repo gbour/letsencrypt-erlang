@@ -32,7 +32,7 @@ on_complete({State, Data}) ->
 main(Domain) ->
     application:ensure_all_started(letsencrypt),
 
-    letsencrypt:start([{mode, webroot}, {cert_path, "/etc/letsencrypt/certs"}, {webroot_path,
+    letsencrypt:start([{mode, webroot}, staging, {cert_path, "/etc/letsencrypt/certs"}, {webroot_path,
 "/etc/letsencrypt/webroot"}]),
     letsencrypt:make_cert(Domain, #{callback => fun on_complete/1}),
 

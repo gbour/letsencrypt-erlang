@@ -275,7 +275,7 @@ pending(Action, _, State=#state{challenge=#{uri := CUriPath}}) ->
 valid(_, _, State=#state{mode=Mode, domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
                              acme_srv={_,_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
 
-    challenge_destroy(Mode),
+    challenge_destroy(Mode, State),
 
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
@@ -295,7 +295,7 @@ valid(_, _, State=#state{mode=Mode, domain=Domain, cert_path=CertPath, key=Key, 
 
 handle_event(reset, StateName, State=#state{mode=Mode}) ->
     %io:format("reset from ~p state~n", [StateName]),
-    challenge_destroy(Mode),
+    challenge_destroy(Mode, State),
     {next_state, idle, State};
 
 handle_event(_, StateName, State) ->
@@ -372,11 +372,14 @@ challenge_init(standalone, #state{port=Port}, _) ->
     ok.
 
 
--spec challenge_destroy(mode()) -> ok.
-challenge_destroy(standalone) ->
+-spec challenge_destroy(mode(), state()) -> ok.
+challenge_destroy(webroot, #state{webroot_path=WPath, challenge=#{token := Token}}) ->
+    file:delete(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>),
+    ok;
+challenge_destroy(standalone, _) ->
 	% stop http server
 	cowboy:stop_listener(letsencrypt_cowboy_listener),
     ok;
-challenge_destroy(_) ->
+challenge_destroy(_, _) ->
 	ok.
 
