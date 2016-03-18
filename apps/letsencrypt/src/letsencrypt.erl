@@ -20,6 +20,8 @@
 -export([start/1, stop/0, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([idle/3, pending/3, valid/3]).
 
+-import(letsencrypt_utils, [bin/1, str/1]).
+
 % uri format compatible with shotgun library
 -type mode()           :: 'webroot'|'slave'|'standalone'.
 -type uri()            :: {Proto::(http|https), Host::string(), Port::integer(), Path::string()}.
@@ -331,24 +333,6 @@ get_nonce(Conn, #state{nonce=undefined, acme_srv={_,_,_,Path}}) ->
     letsencrypt_api:get_nonce(Conn, Path);
 get_nonce(_, #state{nonce=Nonce}) ->
     Nonce.
-
-
--spec bin(binary()|string()) -> binary().
-bin(X) when is_binary(X) ->
-    X;
-bin(X) when is_list(X) ->
-    list_to_binary(X);
-bin(_X) ->
-    throw(invalid).
-
-
--spec str(binary()) -> string().
-str(X) when is_binary(X) ->
-    binary_to_list(X);
-str(X) when is_integer(X) ->
-    integer_to_list(X);
-str(_X) ->
-    throw(invalid).
 
 
 -spec challenge_init(mode(), state(), map()) -> ok.

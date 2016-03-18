@@ -15,7 +15,7 @@
 -module(letsencrypt_utils).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([b64encode/1]).
+-export([b64encode/1, bin/1, str/1]).
 
 -type character() :: integer().
 
@@ -28,4 +28,24 @@ b64encode(X) ->
 encode_byte($+) -> $-;
 encode_byte($/) -> $_;
 encode_byte(B) -> B.
+
+
+-spec bin(binary()|string()) -> binary().
+bin(X) when is_binary(X) ->
+    X;
+bin(X) when is_list(X) ->
+    list_to_binary(X);
+bin(X) when is_atom(X) ->
+    erlang:atom_to_binary(X, utf8);
+bin(_X) ->
+    throw(invalid).
+
+
+-spec str(binary()) -> string().
+str(X) when is_binary(X) ->
+    binary_to_list(X);
+str(X) when is_integer(X) ->
+    integer_to_list(X);
+str(_X) ->
+    throw(invalid).
 
