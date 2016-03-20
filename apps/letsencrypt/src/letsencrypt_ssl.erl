@@ -15,9 +15,11 @@
 -module(letsencrypt_ssl).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([private_key/2, cert_request/2, certificate/4]).
+-export([private_key/2, cert_request/3, certificate/4]).
 
 -include_lib("public_key/include/public_key.hrl").
+
+-import(letsencrypt_utils, [bin/1, str/1]).
 
 % create key
 -spec private_key(undefined|{new, string()}|string(), string()) -> letsencrypt:ssl_privatekey().
@@ -46,18 +48,43 @@ private_key(KeyFile, _) ->
     }.
 
 
--spec cert_request(string(), string()) -> letsencrypt:ssl_csr().
-cert_request(Domain, CertsPath) ->
-    Cmd =  "openssl req -new -key '"++CertsPath++"/"++Domain++".key' -subj '/CN="++Domain++"' -out '"++CertsPath++"/"++Domain++".csr'",
-    _R = os:cmd(Cmd),
-    %io:format("~p: ~p~n", [Cmd, R]),
+-spec cert_request(string(), string(), list(string())) -> letsencrypt:ssl_csr().
+cert_request(Domain, CertsPath, SANs) ->
+    {ok, CertFile} = cert_request2(Domain, CertsPath, SANs),
+    %io:format("CSR ~p~n", [CertFile]),
 
-    {ok, RawCsr} = file:read_file(CertsPath++"/"++Domain++".csr"),
+    {ok, RawCsr} = file:read_file(CertFile),
     [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
 
     %io:format("csr= ~p~n", [Csr]),
     letsencrypt_utils:b64encode(Csr).
 
+
+-spec cert_request2(string(), string(), list(string)) -> string().
+cert_request2(Domain, CertsPath, []) ->
+    CertFile = CertsPath++"/"++Domain++".csr",
+    Cmd =  "openssl req -new -key '"++CertsPath++"/"++Domain++".key' -subj '/CN="++Domain++"' -out '"++CertFile++"'",
+    _R = os:cmd(Cmd),
+    %io:format("~p: ~p~n", [Cmd, _R]),
+    %
+    {ok, CertFile};
+cert_request2(Domain, CertsPath, SANs) ->
+    %io:format("USE SANS~n"),
+    <<$,, SANEntry/binary>> = lists:foldl(fun(X, Acc) -> <<Acc/binary, ",DNS:", X/binary>> end, <<>>, SANs),
+
+    {ok, File} = file:read_file("/etc/ssl/openssl.cnf"),
+    File2 = <<File/binary, "\n[SAN]\nsubjectAltName=DNS:", (bin(Domain))/binary,$,, SANEntry/binary>>,
+    ConfFile = <<"/tmp/letsencrypt_san_openssl.cnf">>,
+    file:write_file(ConfFile, File2),
+
+    CertFile = CertsPath++"/"++Domain++".csr",
+    _Status  = os:cmd(str(<<"openssl req -new -key '", (bin(CertsPath))/binary, $/, (bin(Domain))/binary,
+        ".key' -out '", (bin(CertFile))/binary, "' -subj '/CN=", (bin(Domain))/binary,
+        "' -reqexts SAN -config ", ConfFile/binary>>)),
+    %io:format("ret= ~p~n", [_Status]),
+
+    file:delete(ConfFile),
+    {ok, CertFile}.
 
 -spec certificate(string(), binary(), binary(), string()) -> string().
 certificate(Domain, DomainCert, IntermediateCert, CertsPath) ->

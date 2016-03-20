@@ -283,7 +283,7 @@ valid(_, _, State=#state{mode=Mode, domain=Domain, cert_path=CertPath, key=Key, 
     Nonce = get_nonce(Conn, State),
 
     #{file := KeyFile} = letsencrypt_ssl:private_key({new, str(<<Domain/binary, ".key">>)}, CertPath),
-    Csr = letsencrypt_ssl:cert_request(str(Domain), CertPath), 
+    Csr = letsencrypt_ssl:cert_request(str(Domain), CertPath, []), 
 
     {DomainCert, Nonce2} = letsencrypt_api:new_cert(Conn, BasePath, Key, JWS#{nonce => Nonce}, Csr),
 
