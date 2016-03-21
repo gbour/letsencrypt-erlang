@@ -61,6 +61,7 @@
     conn  = undefined               :: undefined | pid(),
     nonce = undefined               :: undefined | nonce(),
     domain = undefined              :: undefined | binary(),
+    sans  = []                      :: list(string()),
     key   = undefined               :: undefined | ssl_privatekey(),
     jws   = undefined               :: undefined | jws(),
 
@@ -223,58 +224,50 @@ get_challenge() ->
 idle(get_challenge, _, State) ->
     {reply, no_challenge, idle, State};
 
-idle({create, Domain, Opts}, _, 
-        State=#state{mode=Mode, key=Key, jws=JWS, acme_srv={Proto,AcmeDomain,AcmePort,BasePath}}) ->
+idle({create, Domain, Opts}, _, State=#state{key=Key, jws=JWS, acme_srv={_,_,_,BasePath}}) ->
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
+    SANs  = maps:get(domains, Opts, []),
 
     Nonce2   = letsencrypt_api:new_reg(Conn, BasePath, Key, JWS#{nonce => Nonce}),
-    AuthzRet = letsencrypt_api:new_authz(Conn, BasePath, Key, JWS#{nonce => Nonce2}, Domain),
-    %io:format("authzret= ~p~n", [AuthzRet]),
-
-    {Nstate, Nret, Nnonce, NChallenge} = case AuthzRet of
+    {StateName, Reply, Nonce5, NChallenges} = case authz([Domain|SANs], State#state{conn=Conn, nonce=Nonce2}) of
         {error, Err, Nonce3} ->
             {idle, {error, Err}, Nonce3, undefined};
 
-        {ok, HttpChallenge, Nonce3} ->
-            ChallengeResponse = letsencrypt_api:challenge(pre, Conn, BasePath, Key, JWS, HttpChallenge),
-            challenge_init(Mode, State, ChallengeResponse),
-            
-            #{<<"uri">> := CUri} = HttpChallenge,
-            % NOTE: we assume we are on same server than acme_srv, so we reuse Conn
-            case http_uri:parse(str(CUri)) of
-                % matching acme_srv proto, domain & port
-                {ok, {Proto,_,AcmeDomain,AcmePort,CUriPath,_}} ->
-                    #{thumbprint := Thumbprint} = ChallengeResponse,
-                    Nonce4 = letsencrypt_api:challenge(post, Conn, CUriPath, Key, JWS#{nonce => Nonce3}, 
-                                                       Thumbprint),
-
-                    {pending, ok, Nonce4, ChallengeResponse#{uri => CUriPath}};
-
-                _ ->
-                    {idle, {error, <<"invalid ", CUri/binary, " challenge uri">>}, Nonce3, undefined}
-            end
+        {ok, Challenges, Nonce4} ->
+            {pending, ok, Nonce4, Challenges}
     end,
 
-    {reply, Nret, Nstate, State#state{conn=Conn, domain=Domain, nonce=Nnonce, challenge=NChallenge}}.
+    {reply, Reply, StateName, 
+     State#state{conn=Conn, domain=Domain, nonce=Nonce5, challenge=NChallenges, sans=SANs}}.
 
 
 pending(get_challenge, _, State=#state{challenge=Challenge}) ->
     {reply, Challenge, pending, State};
 
-pending(Action, _, State=#state{challenge=#{uri := CUriPath}}) ->
-	%io:format("pending: ~p~n", [Action]),
-
+pending(Action, _, State=#state{challenge=Challenges}) ->
     Conn  = get_conn(State),
-    %Nonce = get_nonce(Conn, State),
 
-    Reply = {StateName, _} = letsencrypt_api:challenge(status, Conn, CUriPath),
-    %io:format(":: challenge state -> ~p (~p)~n", [Reply, AcmPath]),
+    % checking status for each domain name
+    Reply = {StateName,_} = maps:fold(fun(_K, #{uri := Uri}, {Status,Msg}) ->
+        {ok, {_,_,_,_,UriPath,_}} = http_uri:parse(str(Uri)),
+        {Status2, Msg2} = letsencrypt_api:challenge(status, Conn, UriPath),
+        io:format("~p: ~p (~p)~n", [_K, Status2, Msg2]),
 
+        case {Status, Status2} of
+            {valid  ,   valid} -> {valid, Msg};
+            {pending,       _} -> {pending, Msg};
+            {_      , pending} -> {pending, Msg};
+            {valid  , Status2} -> {Status2, Msg2};
+            {Status ,       _} -> {Status, Msg}
+        end
+    end, {valid, undefined}, Challenges),
+
+    io:format(":: challenge state -> ~p~n", [Reply]),
     {reply, Reply, StateName, State#state{conn=Conn}}.
 
 
-valid(_, _, State=#state{mode=Mode, domain=Domain, cert_path=CertPath, key=Key, jws=JWS,
+valid(_, _, State=#state{mode=Mode, domain=Domain, sans=SANs, cert_path=CertPath, key=Key, jws=JWS,
                              acme_srv={_,_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
 
     challenge_destroy(Mode, State),
@@ -283,7 +276,7 @@ valid(_, _, State=#state{mode=Mode, domain=Domain, cert_path=CertPath, key=Key, 
     Nonce = get_nonce(Conn, State),
 
     #{file := KeyFile} = letsencrypt_ssl:private_key({new, str(<<Domain/binary, ".key">>)}, CertPath),
-    Csr = letsencrypt_ssl:cert_request(str(Domain), CertPath, []), 
+    Csr = letsencrypt_ssl:cert_request(str(Domain), CertPath, SANs),
 
     {DomainCert, Nonce2} = letsencrypt_api:new_cert(Conn, BasePath, Key, JWS#{nonce => Nonce}, Csr),
 
@@ -335,9 +328,70 @@ get_nonce(_, #state{nonce=Nonce}) ->
     Nonce.
 
 
+authz(Domains, State=#state{mode=Mode}) ->
+    case authz_step1(Domains, State, #{}) of
+        {error, Err, Nonce} ->
+            {error, Err, Nonce};
+
+        {ok, Challenges, Nonce2} ->
+            io:format("challenges: ~p~n", [Challenges]),
+            challenge_init(Mode, State, Challenges),
+
+            case authz_step2(maps:to_list(Challenges), State#state{nonce=Nonce2}) of
+                {ok, Nonce3} ->
+                    {ok, Challenges, Nonce3};
+                Err ->
+                    Err
+            end
+    end.
+
+
+authz_step1([], #state{nonce=Nonce}, Challenges) ->
+    {ok, Challenges, Nonce};
+authz_step1([Domain|T], State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
+                                              acme_srv={_,_,_,BasePath}},
+                    Challenges) ->
+
+    AuthzRet = letsencrypt_api:new_authz(Conn, BasePath, Key, JWS#{nonce => Nonce}, Domain),
+    io:format("authzret= ~p~n", [AuthzRet]),
+
+    case AuthzRet of
+        {error, Err, Nonce2} ->
+            {error, Err, Nonce2};
+
+        {ok, AuthzChallenge, Nonce3} ->
+            ChallengeResponse = letsencrypt_api:challenge(pre, Conn, BasePath, Key, JWS, AuthzChallenge),
+
+            authz_step1(T, State#state{nonce=Nonce3}, Challenges#{Domain => ChallengeResponse})
+    end.
+
+
+authz_step2([], #state{nonce=Nonce}) ->
+    {ok, Nonce};
+authz_step2([{Domain, Challenge}|T], State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
+                                                         acme_srv={Proto,AcmeDomain,AcmePort,_}}) ->
+
+    #{uri := CUri, thumbprint := Thumbprint} = Challenge,
+    % NOTE: we assume we are on same server than acme_srv, so we reuse Conn
+    case http_uri:parse(str(CUri)) of
+        % matching acme_srv proto, domain & port
+        {ok, {Proto,_,AcmeDomain,AcmePort,CUriPath,_}} ->
+            Nonce1 = letsencrypt_api:challenge(post, Conn, CUriPath, Key, JWS#{nonce => Nonce}, Thumbprint),
+
+            authz_step2(T, State#state{nonce=Nonce1});
+
+        _ ->
+            {error, <<"invalid ", CUri/binary, " challenge uri">>, Nonce}
+    end.
 -spec challenge_init(mode(), state(), map()) -> ok.
-challenge_init(webroot, #state{webroot_path=WPath}, #{token := Token, thumbprint := Thumbprint}) ->
-    file:write_file(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>, Thumbprint);
+challenge_init(webroot, #state{webroot_path=WPath}, Challenges) ->
+    maps:fold(
+        fun(_K, #{token := Token, thumbprint := Thumbprint}, _Acc) ->
+            file:write_file(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>,
+                            Thumbprint)
+        end,
+        0, Challenges
+    );
 challenge_init(slave, _, _) ->
     ok;
 challenge_init(standalone, #state{port=Port}, _) ->
@@ -357,13 +411,16 @@ challenge_init(standalone, #state{port=Port}, _) ->
 
 
 -spec challenge_destroy(mode(), state()) -> ok.
-challenge_destroy(webroot, #state{webroot_path=WPath, challenge=#{token := Token}}) ->
-    file:delete(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>),
+challenge_destroy(webroot, #state{webroot_path=WPath, challenge=Challenges}) ->
+    maps:fold(fun(_K, #{token := Token}, _) ->
+        file:delete(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>)
+    end, 0, Challenges),
     ok;
 challenge_destroy(standalone, _) ->
 	% stop http server
 	cowboy:stop_listener(letsencrypt_cowboy_listener),
     ok;
-challenge_destroy(_, _) ->
+challenge_destroy(slave, _) ->
 	ok.
+
 
