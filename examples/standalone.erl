@@ -13,19 +13,22 @@
 %% limitations under the License.
 
 -module(standalone).
--export([main/1, main/2, on_complete/1]).
+-export([main/1, main/2, main/3, on_complete/1]).
 
 on_complete({State, Data}) ->
     io:format("letsencrypt completed: ~p (data: ~p)~n", [State, Data]),
     letsencrypt:stop().
 
 main(Domain) ->
-    main(Domain, 80).
+    main(Domain, 80, []).
 
 main(Domain, Port) ->
+    main(Domain, Port, []).
+
+main(Domain, Port, SAN) ->
     application:ensure_all_started(letsencrypt),
 
     letsencrypt:start([{mode,standalone}, staging, {cert_path, "/tmp"}, {port, Port}]),
-    letsencrypt:make_cert(Domain, #{callback => fun on_complete/1}),
+    letsencrypt:make_cert(Domain, #{callback => fun on_complete/1, domains => SAN}),
 
     ok.
