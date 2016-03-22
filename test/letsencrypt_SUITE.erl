@@ -23,7 +23,12 @@
 
 groups() ->
     [
-        {all, [], [
+        {simple, [], [
+            test_standalone
+            ,test_slave
+            ,test_webroot
+        ]},
+        {san, [], [
             test_standalone
             ,test_slave
             ,test_webroot
@@ -32,20 +37,32 @@ groups() ->
 
 all() ->
     [
-        {group, all}
+        {group, simple},
+        {group, san}
     ].
 
-test_standalone(_) ->
+init_per_group(san, Config) ->
+    [{san, #{domains => [<<"le2.wtf">>]}} |Config];
+init_per_group(_, Config)   ->
+    Config.
+
+end_per_group(_,_) ->
+    ok.
+
+
+test_standalone(Config) ->
     application:ensure_all_started(letsencrypt),
 
     {ok, Pid} = letsencrypt:start([{mode, standalone}, staging, {port, 5002}, {cert_path, "/tmp"}]),
-    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, #{async => false}),
+
+    SAN = proplists:get_value(san, Config, #{}),
+    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
     %NOTE: is throwing a noproc exception, don't know why
     catch letsencrypt:stop(),
 
     ok.
 
-test_slave(_) ->
+test_slave(Config) ->
     application:ensure_all_started(letsencrypt),
     cowboy:stop_listener(my_http_listener),
 
@@ -60,7 +77,9 @@ test_slave(_) ->
 
 
     {ok, Pid} = letsencrypt:start([{mode, slave}, staging, {cert_path, "/tmp"}]),
-    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, #{async => false}),
+
+    SAN = proplists:get_value(san, Config, #{}),
+    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
 
     %NOTE: is throwing a noproc exception, don't know why
     catch letsencrypt:stop(),
@@ -68,7 +87,7 @@ test_slave(_) ->
 
     ok.
 
-test_webroot(_) ->
+test_webroot(Config) ->
     application:ensure_all_started(letsencrypt),
     cowboy:stop_listener(webroot_listener),
 
@@ -83,7 +102,9 @@ test_webroot(_) ->
     ),
 
     {ok, Pid} = letsencrypt:start([{mode, webroot}, staging, {webroot_path, "/tmp"}, {cert_path, "/tmp"}]),
-    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, #{async => false}),
+
+    SAN = proplists:get_value(san, Config, #{}),
+    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
 
     %NOTE: is throwing a noproc exception, don't know why
     catch letsencrypt:stop(),
