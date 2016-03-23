@@ -227,7 +227,7 @@ idle(get_challenge, _, State) ->
 idle({create, Domain, Opts}, _, State=#state{key=Key, jws=JWS, acme_srv={_,_,_,BasePath}}) ->
     Conn  = get_conn(State),
     Nonce = get_nonce(Conn, State),
-    SANs  = maps:get(domains, Opts, []),
+    SANs  = maps:get(san, Opts, []),
 
     Nonce2   = letsencrypt_api:new_reg(Conn, BasePath, Key, JWS#{nonce => Nonce}),
     {StateName, Reply, Nonce5, NChallenges} = case authz([Domain|SANs], State#state{conn=Conn, nonce=Nonce2}) of

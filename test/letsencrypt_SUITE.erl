@@ -42,7 +42,7 @@ all() ->
     ].
 
 init_per_group(san, Config) ->
-    [{san, #{domains => [<<"le2.wtf">>]}} |Config];
+    [{san, #{san => [<<"le2.wtf">>]}} |Config];
 init_per_group(_, Config)   ->
     Config.
 

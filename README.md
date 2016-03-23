@@ -10,7 +10,7 @@ Features:
 - [ ] registering client (with email)
 - [x] issuing RSA certificate
 - [ ] revoking certificate
-- [ ] alternate domain names (SAN)
+- [x] SAN certificate (supplementary domain names)
 - [ ] allow EC keys
 - [ ] choose RSA key length
 - [ ] unittests
@@ -96,6 +96,7 @@ Params is a list of parameters, choose from the followings:
     * **async** = true|false (optional, _true_ by default): 
     * **callback** (optional, used only when _async=true_): function called once certificate has been
       generated.
+    * **san** (list(binary), optional): supplementary domain names added to the certificate
 
   returns:
     * in asynchronous mode, function returns **async**
@@ -133,6 +134,12 @@ Params is a list of parameters, choose from the followings:
     >
     ...
     completed: ok (result= #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>})
+  ```
+
+    * SAN
+  ```erlang
+    > letsencrypt:make_cert(<<"example.com">>, #{async => false, san => [<<"www.example.com">>]}).
+    {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
   ```
 
 
