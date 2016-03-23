@@ -252,7 +252,7 @@ pending(Action, _, State=#state{challenge=Challenges}) ->
     Reply = {StateName,_} = maps:fold(fun(_K, #{uri := Uri}, {Status,Msg}) ->
         {ok, {_,_,_,_,UriPath,_}} = http_uri:parse(str(Uri)),
         {Status2, Msg2} = letsencrypt_api:challenge(status, Conn, UriPath),
-        io:format("~p: ~p (~p)~n", [_K, Status2, Msg2]),
+        %io:format("~p: ~p (~p)~n", [_K, Status2, Msg2]),
 
         case {Status, Status2} of
             {valid  ,   valid} -> {valid, Msg};
@@ -263,7 +263,7 @@ pending(Action, _, State=#state{challenge=Challenges}) ->
         end
     end, {valid, undefined}, Challenges),
 
-    io:format(":: challenge state -> ~p~n", [Reply]),
+    %io:format(":: challenge state -> ~p~n", [Reply]),
     {reply, Reply, StateName, State#state{conn=Conn}}.
 
 
@@ -334,7 +334,7 @@ authz(Domains, State=#state{mode=Mode}) ->
             {error, Err, Nonce};
 
         {ok, Challenges, Nonce2} ->
-            io:format("challenges: ~p~n", [Challenges]),
+            %io:format("challenges: ~p~n", [Challenges]),
             challenge_init(Mode, State, Challenges),
 
             case authz_step2(maps:to_list(Challenges), State#state{nonce=Nonce2}) of
@@ -353,7 +353,7 @@ authz_step1([Domain|T], State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
                     Challenges) ->
 
     AuthzRet = letsencrypt_api:new_authz(Conn, BasePath, Key, JWS#{nonce => Nonce}, Domain),
-    io:format("authzret= ~p~n", [AuthzRet]),
+    %io:format("authzret= ~p~n", [AuthzRet]),
 
     case AuthzRet of
         {error, Err, Nonce2} ->
