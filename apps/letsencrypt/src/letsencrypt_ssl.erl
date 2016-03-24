@@ -60,7 +60,7 @@ cert_request(Domain, CertsPath, SANs) ->
     letsencrypt_utils:b64encode(Csr).
 
 
--spec cert_request2(string(), string(), list(string)) -> string().
+-spec cert_request2(string(), string(), list(string())) -> {ok, string()}.
 cert_request2(Domain, CertsPath, []) ->
     CertFile = CertsPath++"/"++Domain++".csr",
     Cmd =  "openssl req -new -key '"++CertsPath++"/"++Domain++".key' -subj '/CN="++Domain++"' -out '"++CertFile++"'",
