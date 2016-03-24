@@ -57,8 +57,7 @@ test_standalone(Config) ->
 
     SAN = proplists:get_value(san, Config, #{}),
     {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
-    %NOTE: is throwing a noproc exception, don't know why
-    catch letsencrypt:stop(),
+    letsencrypt:stop(),
 
     ok.
 
@@ -81,8 +80,7 @@ test_slave(Config) ->
     SAN = proplists:get_value(san, Config, #{}),
     {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
 
-    %NOTE: is throwing a noproc exception, don't know why
-    catch letsencrypt:stop(),
+    letsencrypt:stop(),
     cowboy:stop_listener(my_http_listener),
 
     ok.
@@ -106,8 +104,7 @@ test_webroot(Config) ->
     SAN = proplists:get_value(san, Config, #{}),
     {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
 
-    %NOTE: is throwing a noproc exception, don't know why
-    catch letsencrypt:stop(),
+    letsencrypt:stop(),
     cowboy:stop_listener(my_http_listener),
 
     ok.

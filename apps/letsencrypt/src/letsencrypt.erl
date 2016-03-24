@@ -76,7 +76,10 @@ start(Args) ->
 
 -spec stop() -> 'ok'.
 stop() ->
-    gen_fsm:stop({global, ?MODULE}).
+    %NOTE: maintain compatibility with 17.X versions
+    %gen_fsm:stop({global, ?MODULE})
+    gen_fsm:sync_send_all_state_event({global, ?MODULE}, stop).
+
 
 %%
 %% Args:
@@ -297,6 +300,8 @@ handle_event(_, StateName, State) ->
     io:format("async evt: ~p~n", [StateName]),
     {next_state, StateName, State}.
 
+handle_sync_event(stop,_,_,_) ->
+    {stop, normal, ok, #state{}};
 handle_sync_event(_,_, StateName, State) ->
     io:format("sync evt: ~p~n", [StateName]),
     {reply, ok, StateName, State}.
@@ -362,7 +367,9 @@ authz_step1([Domain|T], State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
         {ok, AuthzChallenge, Nonce3} ->
             ChallengeResponse = letsencrypt_api:challenge(pre, Conn, BasePath, Key, JWS, AuthzChallenge),
 
-            authz_step1(T, State#state{nonce=Nonce3}, Challenges#{Domain => ChallengeResponse})
+            %NOTE: keep <18.0 compatibility
+            Challenges2 = maps:put(Domain, ChallengeResponse, Challenges),
+            authz_step1(T, State#state{nonce=Nonce3}, Challenges2)
     end.
 
 
