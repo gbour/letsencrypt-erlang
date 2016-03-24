@@ -28,6 +28,7 @@ Validation challenges
 
 ## Prerequisites
 - openssl (required to generate RSA key and certificate request)
+- erlang OTP >= 17.5
 
 ## Building
 
