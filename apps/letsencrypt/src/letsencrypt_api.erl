@@ -90,9 +90,10 @@ new_authz(Conn, Path, Key, Jws, Domain) ->
 
 -spec challenge(pre , pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()) -> map();
                (post, pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary()) -> letsencrypt:nonce().
-challenge(pre, _, _, Key, _, _HttpChallenge=#{<<"token">> := Token}) ->
+challenge(pre, _, _, Key, _, _HttpChallenge=#{<<"token">> := Token, <<"uri">> := Uri}) ->
     #{
         %path => "/.well-known/acme-challenge/",
+        uri        => Uri,
         token      => Token,
         thumbprint => letsencrypt_jws:thumbprint(Key, Token)
     };

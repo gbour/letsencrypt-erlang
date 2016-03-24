@@ -18,14 +18,17 @@
 
 
 init(Req, []) ->
-    %io:format("req ~p~n", [Req]),
+    Host = cowboy_req:host(Req),
+    %io:format("COWBOY: host= ~p~n    req ~p~n", [Host,Req]),
 
     % NOTES
     %   - cowboy_req:binding() returns undefined is token not set in URI
     %   - letsencrypt:get_challenge() returns 'error' if token+thumbprint are not available
     %
-    Req2 = case {cowboy_req:binding(token, Req), letsencrypt:get_challenge()} of
-       {Token, #{token := Token, thumbprint := Thumbprint}} ->
+    % NOTE: keep <18.0 compatibility
+    Challenges = letsencrypt:get_challenge(),
+    Req2 = case {cowboy_req:binding(token, Req), maps:get(Host, Challenges, undefined)} of
+        {Token, #{token := Token, thumbprint := Thumbprint}} ->
             %io:format("match: ~p -> ~p~n", [Token, Thumbprint]),
             cowboy_req:reply(200, [{<<"content-type">>, <<"text/plain">>}], Thumbprint, Req);
 
