@@ -41,6 +41,10 @@ all() ->
         {group, san}
     ].
 
+init_per_suite(Config) ->
+    application:ensure_all_started(letsencrypt),
+    Config.
+
 init_per_group(san, Config) ->
     [{san, #{san => [<<"le2.wtf">>]}} |Config];
 init_per_group(_, Config)   ->
@@ -51,8 +55,6 @@ end_per_group(_,_) ->
 
 
 test_standalone(Config) ->
-    application:ensure_all_started(letsencrypt),
-
     {ok, Pid} = letsencrypt:start([{mode, standalone}, staging, {port, 5002}, {cert_path, "/tmp"}]),
 
     SAN = proplists:get_value(san, Config, #{}),
@@ -62,7 +64,6 @@ test_standalone(Config) ->
     ok.
 
 test_slave(Config) ->
-    application:ensure_all_started(letsencrypt),
     cowboy:stop_listener(my_http_listener),
 
     Dispatch = cowboy_router:compile([
@@ -86,7 +87,6 @@ test_slave(Config) ->
     ok.
 
 test_webroot(Config) ->
-    application:ensure_all_started(letsencrypt),
     cowboy:stop_listener(webroot_listener),
 
     % use cowboy to serve acme challenge file
