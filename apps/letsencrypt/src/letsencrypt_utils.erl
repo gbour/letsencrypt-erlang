@@ -15,7 +15,7 @@
 -module(letsencrypt_utils).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([b64encode/1, bin/1, str/1]).
+-export([b64encode/1, hexdigest/1, hashdigest/2, bin/1, str/1]).
 
 -type character() :: integer().
 
@@ -24,11 +24,24 @@ b64encode(X) ->
     Base64 = base64:encode(X),
     << <<(encode_byte(B)):8>> || <<B:8>> <= Base64, B =/= $= >>.
 
+
 -spec encode_byte(character()) -> character().
 encode_byte($+) -> $-;
 encode_byte($/) -> $_;
 encode_byte(B) -> B.
 
+
+-spec hexdigest(string()|binary()) -> binary().
+hexdigest(X) ->
+    << <<(hex(H)),(hex(L))>> || <<H:4,L:4>> <= X >>.
+
+hex(C) when C < 10 -> $0 + C;
+hex(C)             -> $a + C - 10.
+
+% returns hexadecimal digest of SHA256 hashed content
+-spec hashdigest(sha256, binary()) -> binary().
+hashdigest(sha256, Content) ->
+	hexdigest(crypto:hash(sha256, Content)).
 
 -spec bin(binary()|string()) -> binary().
 bin(X) when is_binary(X) ->
