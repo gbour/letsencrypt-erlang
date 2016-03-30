@@ -15,8 +15,11 @@
 -module(letsencrypt_api).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([connect/1, close/1, get_nonce/2, new_reg/4, new_authz/5, challenge/6, challenge/3]).
+-export([connect/1, close/1, get_nonce/2, new_reg/4, new_authz/6, challenge/6, challenge/3]).
 -export([new_cert/5, get_intermediate/1]).
+
+-import(letsencrypt_utils, [bin/1]).
+
 
 -ifdef(TEST).
     -define(AGREEMENT_URL  , <<"http://127.0.0.1:4001/terms/v1">>).
@@ -56,10 +59,10 @@ new_reg(Conn, Path, Key, Jws) ->
     Nonce.
 
 
--spec new_authz(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary()) ->
+-spec new_authz(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary(), atom()) ->
     {'ok'   , map()               , letsencrypt:nonce()} |
     {'error', 'uncatched'|binary(), letsencrypt:nonce()}.
-new_authz(Conn, Path, Key, Jws, Domain) ->
+new_authz(Conn, Path, Key, Jws, Domain, ChallengeType) ->
     Payload = #{
         resource => 'new-authz',
         identifier => #{
@@ -76,9 +79,13 @@ new_authz(Conn, Path, Key, Jws, Domain) ->
     case Body of
         #{<<"status">> := <<"pending">>, <<"challenges">> := Challenges} ->
             % get http-01 challenge
-            [HttpChallenge] = lists:filter(fun(C) -> maps:get(<<"type">>, C, error) =:= <<"http-01">> end,
-                                           Challenges),
-            {ok, HttpChallenge, Nonce};
+            [Challenge] = lists:filter(fun(C) -> 
+                    maps:get(<<"type">>, C, error) =:= bin(ChallengeType)
+                end,
+                Challenges
+            ),
+
+            {ok, Challenge, Nonce};
 
         #{<<"detail">> := Msg} ->
             {error, Msg, Nonce};
@@ -90,12 +97,25 @@ new_authz(Conn, Path, Key, Jws, Domain) ->
 
 -spec challenge(pre , pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()) -> map();
                (post, pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary()) -> letsencrypt:nonce().
-challenge(pre, _, _, Key, _, _HttpChallenge=#{<<"token">> := Token, <<"uri">> := Uri}) ->
+challenge(pre, _, _, Key, _,
+          _Challenge=#{<<"type">> := <<"http-01">>, <<"token">> := Token, <<"uri">> := Uri}) ->
     #{
+        type       => 'http-01',
         %path => "/.well-known/acme-challenge/",
         uri        => Uri,
         token      => Token,
         thumbprint => letsencrypt_jws:thumbprint(Key, Token)
+    };
+
+challenge(pre, _, _, Key, _,
+          _Challenge=#{<<"type">> := <<"tls-sni-01">>, <<"token">> := Token, <<"uri">> := Uri}) ->
+    #{
+        type       => 'tls-sni-01',
+        %path => "/.well-known/acme-challenge/",
+        uri        => Uri,
+        token      => Token,
+        thumbprint => letsencrypt_jws:thumbprint(Key, Token)
+       % san        => letsencrypt_jws:san(Key, Token)
     };
 
 challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
