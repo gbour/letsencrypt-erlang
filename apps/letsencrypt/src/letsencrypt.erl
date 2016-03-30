@@ -24,6 +24,7 @@
 
 % uri format compatible with shotgun library
 -type mode()           :: 'webroot'|'slave'|'standalone'.
+-type challenge_type() :: 'http-01'|'tls-sni-01'.
 -type uri()            :: {Proto::(http|https), Host::string(), Port::integer(), Path::string()}.
 -type nonce()          :: binary().
 -type jws()            :: #{'alg' => 'RS256', 'jwk' => map(), nonce => undefined|letsencrypt:nonce() }.
@@ -337,6 +338,8 @@ get_nonce(_, #state{nonce=Nonce}) ->
     Nonce.
 
 
+-spec authz(list(binary()), challenge_type(), state()) -> {error, uncatched|binary(), nonce()}| 
+                                                          {ok, map(), nonce()}.
 authz(Domains=[Domain|_], ChallengeType, State=#state{mode=Mode}) ->
     case authz_step1(Domains, ChallengeType, State, #{}) of
         {error, Err, Nonce} ->
@@ -355,6 +358,8 @@ authz(Domains=[Domain|_], ChallengeType, State=#state{mode=Mode}) ->
     end.
 
 
+-spec authz_step1(list(binary()), challenge_type(), state(), map()) -> {ok, map(), nonce()} | 
+                                                             {error, uncatched|binary(), nonce()}.
 authz_step1([], _, #state{nonce=Nonce}, Challenges) ->
     {ok, Challenges, Nonce};
 authz_step1([Domain|T], ChallengeType,
@@ -376,6 +381,7 @@ authz_step1([Domain|T], ChallengeType,
     end.
 
 
+-spec authz_step2(list(binary()), state()) -> {ok, nonce()} | {error, binary(), nonce()}.
 authz_step2([], #state{nonce=Nonce}) ->
     {ok, Nonce};
 authz_step2([{Domain, Challenge}|T], State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
@@ -393,7 +399,9 @@ authz_step2([{Domain, Challenge}|T], State=#state{conn=Conn, nonce=Nonce, key=Ke
         _ ->
             {error, <<"invalid ", CUri/binary, " challenge uri">>, Nonce}
     end.
--spec challenge_init(mode(), state(), atom(), map()) -> ok.
+
+
+-spec challenge_init(mode(), state(), challenge_type(), map()) -> ok.
 challenge_init(webroot, #state{webroot_path=WPath}, 'http-01', Challenges) ->
     maps:fold(
         fun(_K, #{token := Token, thumbprint := Thumbprint}, _Acc) ->

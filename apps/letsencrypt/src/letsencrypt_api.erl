@@ -59,7 +59,8 @@ new_reg(Conn, Path, Key, Jws) ->
     Nonce.
 
 
--spec new_authz(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary(), atom()) ->
+-spec new_authz(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary(),
+                letsencrypt:challenge_type()) ->
     {'ok'   , map()               , letsencrypt:nonce()} |
     {'error', 'uncatched'|binary(), letsencrypt:nonce()}.
 new_authz(Conn, Path, Key, Jws, Domain, ChallengeType) ->
