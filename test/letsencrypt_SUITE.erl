@@ -21,32 +21,70 @@
 -define(PORT, 5002).
 
 
+generate_groups([], Tests) ->
+    Tests;
+generate_groups([H|T], Tests) ->
+    Sub = generate_groups(T, Tests),
+
+    [ {Item, [], Sub} || Item <- H ].
+
 groups() ->
+    % we build a test matrix (combining all matrix items)
+    Tests = [test_standalone, test_slave, test_webroot],
+    Matrix = [
+        ['dft-challenge', 'http-01']    % challenge type
+        ,['dft-sync', 'async', 'sync']  % sync/async
+        ,[unidomain, san]               % san or not
+    ],
+
+    Groups = generate_groups(Matrix, Tests),
+    io:format("groups = ~p~n", [Groups]),
     [
-        {simple, [], [
-            test_standalone
-            ,test_slave
-            ,test_webroot
-        ]},
-        {san, [], [
-            test_standalone
-            ,test_slave
-            ,test_webroot
-        ]}
+        {matrix, [], Groups}
     ].
+
+%        {simple, [], [
+%            test_standalone
+%            ,test_slave
+%            ,test_webroot
+%        ]},
+%        {san, [], [
+%            test_standalone
+%            ,test_slave
+%            ,test_webroot
+%        ]},
+%        {tlssni, [], [
+%            test_standalone
+%        }]
+%    ].
 
 all() ->
     [
-        {group, simple},
-        {group, san}
+        {group, matrix}
     ].
+
 
 init_per_suite(Config) ->
     application:ensure_all_started(letsencrypt),
-    Config.
+    [{opts, #{}}].
 
+
+setopt(Config, Kv) ->
+    Opts = proplists:get_value(opts, Config),
+    lists:keyreplace(opts, 1, Config, {opts, maps:merge(Opts, Kv)}).
+
+% challenge type (default: http-01)
+init_per_group('http-01', Config) ->
+    setopt(Config, #{challenge => 'http-01'});
+% sync/async
+init_per_group(sync, Config) ->
+    setopt(Config, #{async => false});
+init_per_group(async, Config) ->
+    setopt(Config, #{async => true});
+% unidomain/san
 init_per_group(san, Config) ->
-    [{san, #{san => [<<"le2.wtf">>]}} |Config];
+    setopt(Config, #{san => [<<"le2.wtf">>]});
+
 init_per_group(_, Config)   ->
     Config.
 
@@ -57,8 +95,21 @@ end_per_group(_,_) ->
 test_standalone(Config) ->
     {ok, Pid} = letsencrypt:start([{mode, standalone}, staging, {port, 5002}, {cert_path, "/tmp"}]),
 
-    SAN = proplists:get_value(san, Config, #{}),
-    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
+    Opts = proplists:get_value(opts, Config),
+    io:format("opts: ~p~n", [Opts]),
+    case maps:get(async, Opts, true) of
+        false ->
+            {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, Opts);
+
+        true  ->
+            % async callback
+            C = fun({Status, Result}) ->
+                ok
+            end,
+
+            async = letsencrypt:make_cert(<<"le.wtf">>, Opts#{callback => C})
+    end,
+
     letsencrypt:stop(),
 
     ok.
@@ -78,8 +129,9 @@ test_slave(Config) ->
 
     {ok, Pid} = letsencrypt:start([{mode, slave}, staging, {cert_path, "/tmp"}]),
 
-    SAN = proplists:get_value(san, Config, #{}),
-    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
+    Opts = proplists:get_value(opts, Config),
+    %{ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, Opts),
+    letsencrypt:make_cert(<<"le.wtf">>, Opts),
 
     letsencrypt:stop(),
     cowboy:stop_listener(my_http_listener),
@@ -101,8 +153,9 @@ test_webroot(Config) ->
 
     {ok, Pid} = letsencrypt:start([{mode, webroot}, staging, {webroot_path, "/tmp"}, {cert_path, "/tmp"}]),
 
-    SAN = proplists:get_value(san, Config, #{}),
-    {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
+    Opts = proplists:get_value(opts, Config),
+    %{ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
+    letsencrypt:make_cert(<<"le.wtf">>, Opts),
 
     letsencrypt:stop(),
     cowboy:stop_listener(my_http_listener),
