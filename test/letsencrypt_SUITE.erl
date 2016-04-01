@@ -19,6 +19,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(PORT, 5002).
+-define(DEBUG(Fmt, Args), ct:log(default, 50, Fmt, Args)).
 
 
 generate_groups([], Tests) ->
@@ -41,6 +42,7 @@ groups() ->
     io:format("groups = ~p~n", [Groups]),
     [
         {matrix, [], Groups}
+        ,{'tls-sni-01', [], [test_standalone]}
     ].
 
 %        {simple, [], [
@@ -60,7 +62,8 @@ groups() ->
 
 all() ->
     [
-        {group, matrix}
+        {group, matrix},
+        {group, 'tls-sni-01'}
     ].
 
 
@@ -74,8 +77,12 @@ setopt(Config, Kv) ->
     lists:keyreplace(opts, 1, Config, {opts, maps:merge(Opts, Kv)}).
 
 % challenge type (default: http-01)
+init_per_group('dft-challenge', Config) ->
+    [{port, 5002}|Config];
 init_per_group('http-01', Config) ->
-    setopt(Config, #{challenge => 'http-01'});
+    [{port, 5002}| setopt(Config, #{challenge => 'http-01'})];
+init_per_group('tls-sni-01', Config) ->
+    [{port, 5001}| setopt(Config, #{challenge => 'tls-sni-01', async => false})];
 % sync/async
 init_per_group(sync, Config) ->
     setopt(Config, #{async => false});
@@ -93,10 +100,11 @@ end_per_group(_,_) ->
 
 
 test_standalone(Config) ->
-    {ok, Pid} = letsencrypt:start([{mode, standalone}, staging, {port, 5002}, {cert_path, "/tmp"}]),
+    Port = proplists:get_value(port, Config),
+    {ok, Pid} = letsencrypt:start([{mode, standalone}, staging, {port, Port}, {cert_path, "/tmp"}]),
 
     Opts = proplists:get_value(opts, Config),
-    io:format("opts: ~p~n", [Opts]),
+    ?DEBUG("opts: ~p~n", [Opts]),
     case maps:get(async, Opts, true) of
         false ->
             {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, Opts);
