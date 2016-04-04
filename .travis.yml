@@ -1,4 +1,8 @@
 sudo: required
+#dist: trusty
+#dist: precise
+#group: legacy
+#NOTE: there is no docker-compose on precise image
 
 language: erlang
 
@@ -6,14 +10,14 @@ otp_release:
     - 18.2.1
     - 17.5
 
-env:
-    - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
+#env:
+#    - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
 
 # we only test boulder staging version against last OTP version
-matrix:
-    include:
-        - otp_release: 18.2.1
-          env: BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
+#matrix:
+#    include:
+#        - otp_release: 18.2.1
+#          env: BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
       
 addons:
     apt:
@@ -32,6 +36,7 @@ before_install:
     - git clone https://github.com/letsencrypt/boulder.git boulder
     - cd boulder
     # we want to test agains version running on prod
+    - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
     - REV=`http $BOULDER_BUILD|sed -e "s/Boulder=( +\([0-9a-f]\+\) .*/\1/"`
     - echo "using boulder rev +$REV"
     - git checkout $REV
