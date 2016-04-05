@@ -1,20 +1,30 @@
-sudo: required
+#sudo: required
 
 language: erlang
 
 otp_release:
-    - 18.3
     - 18.2.1
     - 17.5
+
+services:
+    - rabbitmq
+    - mariadb
 
 addons:
     apt:
         packages:
-            - httpie
             - elinks
 
-services:
-    - docker
+    mariadb: "10.0"
+
+    hosts:
+        - le.wtf
+        - le2.wtf
+
+env:
+    global:
+        - GOPATH=/tmp/go
+        - PATH=$GOPATH/bin:$PATH
 
 before_install:
     # small files webservers
@@ -23,7 +33,8 @@ before_install:
     - cd $TRAVIS_BUILD_DIR
     # letsencrypt server
     - git clone --depth=1 https://github.com/letsencrypt/boulder.git boulder
-    - cd boulder && docker-compose build
+    #- cd boulder && docker-compose build
+    - cd boulder && test/setup.sh
     - cd $TRAVIS_BUILD_DIR
 
 install:
