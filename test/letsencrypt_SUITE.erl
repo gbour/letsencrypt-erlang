@@ -18,8 +18,8 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--define(PORT, 5002).
--define(DEBUG(Fmt, Args), ct:log(default, 50, Fmt, Args)).
+-define(DEBUG(Str), ct:log(default, 50, Str++"~n", [])).
+-define(DEBUG(Fmt, Args), ct:log(default, 50, Fmt++"~n", Args)).
 
 
 generate_groups([], Tests) ->
@@ -78,51 +78,33 @@ setopt(Config, Kv) ->
 
 % challenge type (default: http-01)
 init_per_group('dft-challenge', Config) ->
-    [{port, 5002}|Config];
+    [{port, 5002},{filter, 'dft-challenge'}| Config];
 init_per_group('http-01', Config) ->
-    [{port, 5002}| setopt(Config, #{challenge => 'http-01'})];
+    [{port, 5002},{filter, 'http-01'}| setopt(Config, #{challenge => 'http-01'})];
 init_per_group('tls-sni-01', Config) ->
-    [{port, 5001}| setopt(Config, #{challenge => 'tls-sni-01', async => false})];
+    [{port, 5001},{filter,'tls-sni-01'}| setopt(Config, #{challenge => 'tls-sni-01', async => true})];
 % sync/async
 init_per_group(sync, Config) ->
-    setopt(Config, #{async => false});
+    [{filter, sync}| setopt(Config, #{async => false})];
 init_per_group(async, Config) ->
-    setopt(Config, #{async => true});
+    [{filter, async}| setopt(Config, #{async => true})];
 % unidomain/san
-init_per_group(san, Config) ->
-    setopt(Config, #{san => [<<"le2.wtf">>]});
+init_per_group(N=san, Config) ->
+    [{filler, san}| setopt(Config, #{san => [<<"le2.wtf">>]})];
 
-init_per_group(_, Config)   ->
-    Config.
+init_per_group(GroupName, Config)   ->
+    [{filter,GroupName}| Config].
 
 end_per_group(_,_) ->
     ok.
 
 
 test_standalone(Config) ->
-    Port = proplists:get_value(port, Config),
-    {ok, Pid} = letsencrypt:start([{mode, standalone}, staging, {port, Port}, {cert_path, "/tmp"}]),
-
-    Opts = proplists:get_value(opts, Config),
-    ?DEBUG("opts: ~p~n", [Opts]),
-    case maps:get(async, Opts, true) of
-        false ->
-            {ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, Opts);
-
-        true  ->
-            % async callback
-            C = fun({Status, Result}) ->
-                ok
-            end,
-
-            async = letsencrypt:make_cert(<<"le.wtf">>, Opts#{callback => C})
-    end,
-
-    letsencrypt:stop(),
-
-    ok.
+    Port  = proplists:get_value(port, Config),
+    priv_COMMON(standalone, Config, [{port,Port}]).
 
 test_slave(Config) ->
+    Port = proplists:get_value(port, Config),
     cowboy:stop_listener(my_http_listener),
 
     Dispatch = cowboy_router:compile([
@@ -130,23 +112,15 @@ test_slave(Config) ->
             {<<"/.well-known/acme-challenge/:token">>, letsencrypt_cowboy_handler, []}
         ]}
     ]),
-    {ok, _} = cowboy:start_http(my_http_listener, 1, [{port, ?PORT}],
+    {ok, _} = cowboy:start_http(my_http_listener, 1, [{port, Port}],
         [{env, [{dispatch, Dispatch}]}]
     ),
 
-
-    {ok, Pid} = letsencrypt:start([{mode, slave}, staging, {cert_path, "/tmp"}]),
-
-    Opts = proplists:get_value(opts, Config),
-    %{ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, Opts),
-    letsencrypt:make_cert(<<"le.wtf">>, Opts),
-
-    letsencrypt:stop(),
-    cowboy:stop_listener(my_http_listener),
-
-    ok.
+    priv_COMMON(slave, Config, []),
+    cowboy:stop_listener(my_http_listener).
 
 test_webroot(Config) ->
+    Port = proplists:get_value(port, Config),
     cowboy:stop_listener(webroot_listener),
 
     % use cowboy to serve acme challenge file
@@ -155,19 +129,50 @@ test_webroot(Config) ->
             {<<"/.well-known/acme-challenge/:token">>, test_webroot_handler, []}
         ]}
     ]),
-    {ok, _} = cowboy:start_http(my_http_listener, 1, [{port, ?PORT}],
+    {ok, _} = cowboy:start_http(my_http_listener, 1, [{port, Port}],
         [{env, [{dispatch, Dispatch}]}]
     ),
 
-    {ok, Pid} = letsencrypt:start([{mode, webroot}, staging, {webroot_path, "/tmp"}, {cert_path, "/tmp"}]),
+    priv_COMMON(webroot, Config, [{webroot_path, "/tmp"}]),
+    cowboy:stop_listener(my_http_listener).
 
-    Opts = proplists:get_value(opts, Config),
-    %{ok, #{cert := Cert, key := Key}} = letsencrypt:make_cert(<<"le.wtf">>, SAN#{async => false}),
-    letsencrypt:make_cert(<<"le.wtf">>, Opts),
+%%
+%% PRIVATE
+%%
+
+
+priv_COMMON(Mode, Config, StartOpts) ->
+    Comment = string:join(lists:map(fun erlang:atom_to_list/1, proplists:get_all_values(filter, Config)), ","),
+    ct:comment(Comment, []),
+
+    Opts  = proplists:get_value(opts, Config),
+    Async = maps:get(async, Opts, true),
+    ?DEBUG("async: ~p, opts: ~p, startopts: ~p", [Async, Opts, StartOpts]),
+
+    {ok, Pid} = letsencrypt:start([{mode, Mode}, staging, {cert_path, "/tmp"}]++StartOpts),
+
+    R3 = case Async of
+        false ->
+            letsencrypt:make_cert(<<"le.wtf">>, Opts);
+
+        true  ->
+            % async callback
+            Parent = self(),
+            C = fun(R) ->
+                Parent ! {complete, R}
+            end,
+
+            async = letsencrypt:make_cert(<<"le.wtf">>, Opts#{callback => C}),
+            receive
+                {complete, R2} -> R2
+                after 60000    -> {error, async_timeout}
+            end
+    end,
 
     letsencrypt:stop(),
-    cowboy:stop_listener(my_http_listener),
+    % checking certificate returned
+    ?DEBUG("result: ~p", [R3]),
+    {ok, #{cert := Cert, key := Key}} = R3,
 
     ok.
-
 
