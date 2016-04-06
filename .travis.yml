@@ -46,7 +46,7 @@ before_install:
     - cd $TRAVIS_BUILD_DIR
     # letsencrypt server
     - go version
-    - git clone --depth=1 https://github.com/letsencrypt/boulder.git $GOPATH/src/github.com/letsencrypt/boulder
+    - git clone https://github.com/letsencrypt/boulder.git $GOPATH/src/github.com/letsencrypt/boulder
     - cd $GOPATH/src/github.com/letsencrypt/boulder
     # we want to test agains version running on prod
     - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
