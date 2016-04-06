@@ -18,6 +18,8 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-include_lib("public_key/include/public_key.hrl").
+
 -define(DEBUG(Str), ct:log(default, 50, Str++"~n", [])).
 -define(DEBUG(Fmt, Args), ct:log(default, 50, Fmt++"~n", Args)).
 
@@ -173,6 +175,84 @@ priv_COMMON(Mode, Config, StartOpts) ->
     % checking certificate returned
     ?DEBUG("result: ~p", [R3]),
     {ok, #{cert := Cert, key := Key}} = R3,
+    certificate_validation(Cert, <<"le.wtf">>, maps:get(san, Opts, [])),
 
     ok.
+
+certificate_validation(CertFile, Domain, SAN) ->
+    {ok, File} = file:read_file(CertFile),
+    [{'Certificate',Cert,_}|_] = public_key:pem_decode(File), % 2d certificate is letsencrypt intermediate's one
+
+    #'OTPCertificate'{tbsCertificate = #'OTPTBSCertificate'{
+        issuer = Issuer,
+        validity = #'Validity'{notBefore = Start, notAfter= End},
+        subject = Subject,
+        extensions = Exts
+    }} = public_key:pkix_decode_cert(Cert, otp),
+
+    ?DEBUG("== certificate informations ==~n"++
+           " > subject: ~p~n"++
+           " > issuer : ~p~n"++
+           " > start/stop: ~p/~p~n" ++
+           " > altNames: ~p~n",
+           [rdnSeq(Subject, ?'id-at-commonName'), rdnSeq(Issuer, ?'id-at-commonName'),
+            to_date(Start), to_date(End), exten(Exts, ?'id-ce-subjectAltName')]),
+
+    % performing match tests
+    match(rdnSeq(Issuer , ?'id-at-commonName'), "happy hacker fake CA", "wrong issuer (~p =:= ~p)"),
+    match(rdnSeq(Subject, ?'id-at-commonName'), erlang:binary_to_list(Domain), "wrong CN (~p =:= ~p)"),
+
+    SAN2 = [ erlang:binary_to_list(X) || X <- [Domain|SAN] ],
+    match(exten(Exts, ?'id-ce-subjectAltName'), SAN2, "wrong SAN (~p =:= ~p)"),
+
+    % certificate validity = 90 days
+    match(add_days(to_date(Start), 90), to_date(End), "wrong certificate validity (~p =:= ~p)"),
+
+    ok.
+
+rdnSeq({rdnSequence, Seq}, Match) ->
+    rdnSeq(Seq, Match);
+rdnSeq([[{'AttributeTypeAndValue', Match, Result}]|_], Match) ->
+    str(Result);
+rdnSeq([H|T], Match) ->
+    rdnSeq(T, Match);
+rdnSeq([], _) ->
+    undefined.
+
+exten([], Match) ->
+    undefined;
+exten([#'Extension'{extnID = Match, extnValue = Values}|_], Match) ->
+    [ str(DNS) || DNS <- Values];
+exten([H|T], Match) ->
+    exten(T, Match).
+
+str({printableString, Str}) ->
+    Str;
+str({dNSName, Str}) ->
+    Str.
+
+to_date({utcTime, Date}) ->
+    case re:run(Date, "(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})Z",[{capture,all_but_first,list}]) of
+        {match, Matches} ->
+            [Y,M,D,H,Mm,S] = lists:map(fun(X) -> erlang:list_to_integer(X) end, Matches),
+            {{2000+Y, M, D}, {H, Mm, S}};
+
+        _ -> error
+    end.
+
+add_days({Date,Time}, Days) ->
+    {
+        calendar:gregorian_days_to_date(
+            calendar:date_to_gregorian_days(Date) + Days),
+        Time
+    }.
+
+match(X, Y, Msg) ->
+    case X =:= Y of
+        false ->
+            ?DEBUG(Msg, [X,Y]),
+            throw({'match-exception', lists:flatten(io_lib:format(Msg, [X,Y]))});
+
+        _ -> true
+    end.
 
