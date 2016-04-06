@@ -38,6 +38,9 @@ env:
     global:
         - GOPATH=/tmp/go
         - PATH=$GOPATH/bin:$PATH
+    matrix:
+        - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
+        - BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
 
 before_install:
     # small files webservers
@@ -49,7 +52,7 @@ before_install:
     - git clone https://github.com/letsencrypt/boulder.git $GOPATH/src/github.com/letsencrypt/boulder
     - cd $GOPATH/src/github.com/letsencrypt/boulder
     # we want to test agains version running on prod
-    - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
+    #- BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
     - REV=`elinks -dump $BOULDER_BUILD|sed -e "s/.*Boulder=( +\([0-9a-f]\+\) .*/\1/"`
     - echo "using boulder rev +$REV"
     - git checkout $REV
