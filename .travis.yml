@@ -1,10 +1,15 @@
-#sudo: required
+sudo: required
+dist: trusty
 
 language: erlang
+      #    - go
 
 otp_release:
-    - 18.2.1
+    #    - 18.2.1
     - 17.5
+
+#go:
+#    - 1.5
 
 services:
     - rabbitmq
@@ -14,12 +19,15 @@ addons:
     apt:
         packages:
             - elinks
+            - rsyslog
 
     mariadb: "10.0"
 
     hosts:
         - le.wtf
         - le2.wtf
+        - boulder-mysql
+        - boulder-rabbitmq
 
 env:
     global:
@@ -32,9 +40,17 @@ before_install:
     - cd averell && make && make
     - cd $TRAVIS_BUILD_DIR
     # letsencrypt server
-    - git clone --depth=1 https://github.com/letsencrypt/boulder.git boulder
+    - go version
+    #- go get github.com/tools/godep
+    - git clone --depth=1 https://github.com/letsencrypt/boulder.git $GOPATH/src/github.com/letsencrypt/boulder
     #- cd boulder && docker-compose build
-    - cd boulder && test/setup.sh
+    - cd $GOPATH/src/github.com/letsencrypt/boulder
+    #- godep restore -v
+    - test/setup.sh
+    - ls $GOPATH/bin
+    - ls $GOPATH/pkg/*/*
+    - ls $GOPATH/src/*
+    #- go get github.com/jsha/listenbuddy
     - cd $TRAVIS_BUILD_DIR
 
 install:
@@ -43,12 +59,13 @@ install:
 
 before_script:
     # serve CA certificate
-    - averell/averell -p 3099 -v boulder&
+    - averell/averell -p 3099 -v $GOPATH/src/github.com/letsencrypt/boulder&
     #
-    - sed -i 's/-it/-i/' boulder/test/run-docker.sh
-    - boulder/test/run-docker.sh > /tmp/boulder.log&
+    #- sed -i 's/-it/-i/' boulder/test/run-docker.sh
+    #- boulder/test/run-docker.sh > /tmp/boulder.log&
+    - cd $GOPATH/src/github.com/letsencrypt/boulder && ./start.py > /tmp/boulder.log&
     # waiting for boulder being fully started
-    - r=1; while [ $r -ne 0 ] ; do http http://localhost:4000/directory 2>/dev/null; r=$?; sleep 5; done
+    - r=1; while [ $r -ne 0 ] ; do elinks -dump http://localhost:4000/directory 2>/dev/null; r=$?; sleep 5; done
 
 
 script: 
