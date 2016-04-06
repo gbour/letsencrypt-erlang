@@ -10,12 +10,6 @@ otp_release:
 #env:
 #    - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
 
-# we only test boulder staging version against last OTP version
-#matrix:
-#    include:
-#        - otp_release: 18.2.1
-#          env: BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
-      
 services:
     - rabbitmq
     - mariadb
@@ -40,7 +34,14 @@ env:
         - PATH=$GOPATH/bin:$PATH
     matrix:
         - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
-        - BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
+        #- BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
+
+# we only test boulder staging version against last OTP version
+matrix:
+    include:
+        - otp_release: 18.2.1
+          env: BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
+
 
 before_install:
     # small files webservers
