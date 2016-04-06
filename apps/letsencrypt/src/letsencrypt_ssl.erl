@@ -107,11 +107,20 @@ certificate(Domain, DomainCert, IntermediateCert, CertsPath) ->
     %io:format("domain cert: ~p~nintermediate: ~p~n", [DomainCert, IntermediateCert]),
     %io:format("writing final certificate to ~p~n", [FileName]),
 
-    file:write_file(FileName, <<"-----BEGIN CERTIFICATE-----\n",
-                                (base64:encode(DomainCert))/binary, $\n,
-                                "-----END CERTIFICATE-----\n",
-                                IntermediateCert/binary>>
-    ),
-
+    file:write_file(FileName, <<(pem_format(DomainCert))/binary, $\n, IntermediateCert/binary>>),
     FileName.
 
+
+-spec pem_format(binary()) -> binary().
+pem_format(Cert) ->
+    <<"-----BEGIN CERTIFICATE-----\n",
+      (pem_format(base64:encode(Cert), <<>>))/binary, $\n,
+      "-----END CERTIFICATE-----">>.
+
+-spec pem_format(binary(), binary()) -> binary().
+pem_format(<<>>, <<$\n, Fmt/binary>>) ->
+    Fmt;
+pem_format(<<Head:64/binary, Rest/binary>>, Fmt)  ->
+    pem_format(Rest, <<Fmt/binary, $\n, Head/binary>>);
+pem_format(Rest, Fmt)  ->
+    pem_format(<<>>, <<Fmt/binary, $\n, Rest/binary>>).

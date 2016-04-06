@@ -39,7 +39,8 @@
 -else.
     -define(STAGING_API_URL      , "https://acme-staging.api.letsencrypt.org/acme").
     -define(DEFAULT_API_URL      , "https://acme-v01.api.letsencrypt.org/acme").
-    -define(INTERMEDIATE_CERT_URL, "https://letsencrypt.org/certs/lets-encrypt-x1-cross-signed.pem").
+    %TODO: dynamically get xs certificate given the one used to sign the generated one
+    -define(INTERMEDIATE_CERT_URL, "https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem").
 -endif.
 %-define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
 
