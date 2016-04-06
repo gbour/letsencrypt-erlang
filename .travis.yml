@@ -72,8 +72,9 @@ before_script:
     - cd $GOPATH/src/github.com/letsencrypt/boulder
     # prevent limiting certificates generation
     - "sed -i 's/threshold: 5/threshold: 100/' test/rate-limit-policies.yml"
-    - cat test/rate-limit-policies.yml
+    #- cat test/rate-limit-policies.yml
     - ./start.py > /tmp/boulder.log&
+    - cd $TRAVIS_BUILD_DIR
     # waiting for boulder being fully started
     - r=1; while [ $r -ne 0 ] ; do elinks -dump http://localhost:4000/directory 2>/dev/null; r=$?; sleep 5; done
 
