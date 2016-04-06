@@ -2,14 +2,10 @@ sudo: required
 dist: trusty
 
 language: erlang
-      #    - go
 
 otp_release:
-    #    - 18.2.1
+    - 18.2.1
     - 17.5
-
-#go:
-#    - 1.5
 
 services:
     - rabbitmq
@@ -41,16 +37,11 @@ before_install:
     - cd $TRAVIS_BUILD_DIR
     # letsencrypt server
     - go version
-    #- go get github.com/tools/godep
     - git clone --depth=1 https://github.com/letsencrypt/boulder.git $GOPATH/src/github.com/letsencrypt/boulder
     #- cd boulder && docker-compose build
     - cd $GOPATH/src/github.com/letsencrypt/boulder
-    #- godep restore -v
     - test/setup.sh
-    - ls $GOPATH/bin
-    - ls $GOPATH/pkg/*/*
-    - ls $GOPATH/src/*
-    #- go get github.com/jsha/listenbuddy
+    #- ls $GOPATH/bin $GOPATH/pkg/*/* $GOPATH/src/*
     - cd $TRAVIS_BUILD_DIR
 
 install:
@@ -61,8 +52,6 @@ before_script:
     # serve CA certificate
     - averell/averell -p 3099 -v $GOPATH/src/github.com/letsencrypt/boulder&
     #
-    #- sed -i 's/-it/-i/' boulder/test/run-docker.sh
-    #- boulder/test/run-docker.sh > /tmp/boulder.log&
     - cd $GOPATH/src/github.com/letsencrypt/boulder && ./start.py > /tmp/boulder.log&
     # waiting for boulder being fully started
     - r=1; while [ $r -ne 0 ] ; do elinks -dump http://localhost:4000/directory 2>/dev/null; r=$?; sleep 5; done
