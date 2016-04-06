@@ -146,6 +146,7 @@ test_webroot(Config) ->
 priv_COMMON(Mode, Config, StartOpts) ->
     Comment = string:join(lists:map(fun erlang:atom_to_list/1, proplists:get_all_values(filter, Config)), ","),
     ct:comment(Comment, []),
+    ct:print("%%% letsencrypt_SUITE <== test_"++erlang:atom_to_list(Mode)++": "++Comment),
 
     Opts  = proplists:get_value(opts, Config),
     Async = maps:get(async, Opts, true),
