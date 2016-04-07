@@ -52,6 +52,8 @@ before_install:
     - go version
     - git clone https://github.com/letsencrypt/boulder.git $GOPATH/src/github.com/letsencrypt/boulder
     - cd $GOPATH/src/github.com/letsencrypt/boulder
+    - go get github.com/tools/godep
+    - godep restore -v
     # we want to test agains version running on prod
     #- BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
     - REV=`elinks -dump $BOULDER_BUILD|sed -e "s/.*Boulder=( +\([0-9a-f]\+\) .*/\1/"`
