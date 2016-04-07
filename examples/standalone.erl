@@ -13,7 +13,7 @@
 %% limitations under the License.
 
 -module(standalone).
--export([main/1, main/2, main/3, on_complete/1]).
+-export([main/1, main/2, main/3, main/4, on_complete/1]).
 
 on_complete({State, Data}) ->
     io:format("letsencrypt completed: ~p (data: ~p)~n", [State, Data]),
@@ -30,5 +30,14 @@ main(Domain, Port, SAN) ->
 
     letsencrypt:start([{mode,standalone}, staging, {cert_path, "/tmp"}, {port, Port}]),
     letsencrypt:make_cert(Domain, #{callback => fun on_complete/1, domains => SAN}),
+
+    ok.
+
+-spec main(binary(), integer(), list(binary()), 'http-01'|'tls-sni-01') -> ok.
+main(Domain, Port, SAN, Challenge) ->
+    application:ensure_all_started(letsencrypt),
+
+    letsencrypt:start([{mode,standalone}, staging, {cert_path, "/tmp"}, {port, Port}]),
+    letsencrypt:make_cert(Domain, #{callback => fun on_complete/1, domains => SAN, challenge => Challenge}),
 
     ok.

@@ -22,7 +22,7 @@ Modes
 
 Validation challenges
 - [x] http-01 (http)
-- [ ] tls-sni-01 (https)
+- [x] tls-sni-01 (https) (*standalone* mode only)
 - [ ] dns-01
 - [ ] proof-of-possession-01
 
@@ -98,6 +98,7 @@ Params is a list of parameters, choose from the followings:
     * **callback** (optional, used only when _async=true_): function called once certificate has been
       generated.
     * **san** (list(binary), optional): supplementary domain names added to the certificate
+    * **challenge** (optional): 'http-01' (default) or 'tls-sni-01'
 
   returns:
     * in asynchronous mode, function returns **async**
@@ -143,6 +144,17 @@ Params is a list of parameters, choose from the followings:
     {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
   ```
 
+    * explicit **'http-01'** challenge
+  ```erlang
+    > letsencrypt:make_cert(<<"example.com">>, #{async => false, challenge => 'http-01'}).
+    {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
+  ```
+
+    * **'tls-sni-01'** challenge
+  ```erlang
+    > letsencrypt:make_cert(<<"example.com">>, #{async => false, challenge => 'tls-sni-01'}).
+    {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
+  ```
 
 ## Action modes
 
@@ -212,8 +224,23 @@ main() ->
     ok.
 ```
 
+You can choose to use **'tls-sni-01'** challenge instead of default **'http-01'**. Thus connection from
+letsencrypt server will be made on https port (443)
+
+```erlang
+
+on_complete({State, Data}) ->
+    io:format("letsencrypt certificate issued: ~p (data: ~p)~n", [State, Data]).
+
+main() ->
+    letsencrypt:start([{mode,standalone}, staging, {cert_path,"/path/to/certs"}, {port, 443)]),
+    letsencrypt:make_cert(<<"mydomain.tld">>, #{challenge => 'tls-sni-01', callback => fun on_complete/1}),
+
+    ok.
+```
 
 ## License
 
 letsencrypt-erlang is distributed under APACHE 2.0 license.
+
 
