@@ -229,6 +229,8 @@ exten([H|T], Match) ->
 
 str({printableString, Str}) ->
     Str;
+str({utf8String, Str}) ->
+	erlang:binary_to_list(Str);
 str({dNSName, Str}) ->
     Str.
 
