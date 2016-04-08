@@ -180,7 +180,7 @@ post(Conn, Path, Headers, Content) ->
 
 
 -spec get_intermediate(letsencrypt:uri()) -> {ok, binary()}.
-get_intermediate(X={Proto, Domain, Port, Path}) ->
+get_intermediate({Proto, Domain, Port, Path}) ->
     {ok, Conn} = shotgun:open(Domain, Port, Proto),
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
     shotgun:close(Conn),

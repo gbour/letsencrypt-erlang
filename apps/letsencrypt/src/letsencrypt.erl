@@ -159,7 +159,7 @@ make_cert(Domain, Opts=#{async := false}) ->
     make_cert_bg(Domain, Opts);
 % default to async = true
 make_cert(Domain, Opts) ->
-    Pid = erlang:spawn(?MODULE, make_cert_bg, [Domain, Opts#{async => true}]),
+    _Pid = erlang:spawn(?MODULE, make_cert_bg, [Domain, Opts#{async => true}]),
     async.
 
 -spec make_cert_bg(string()|binary(), map()) -> {'ok', map()}|{'error', 'invalid'}.
@@ -213,7 +213,7 @@ wait_valid(Cnt,Max) ->
 get_challenge() ->
     case catch gen_fsm:sync_send_event({global, ?MODULE}, get_challenge) of
         % process not started, wrong state, ...
-        {'EXIT', Exc} ->
+        {'EXIT', _Exc} ->
             %io:format("exc: ~p~n", [Exc]),
             error;
 
@@ -254,7 +254,7 @@ idle({create, Domain, Opts}, _, State=#state{key=Key, jws=JWS, acme_srv={_,_,_,B
 pending(get_challenge, _, State=#state{challenge=Challenge}) ->
     {reply, Challenge, pending, State};
 
-pending(Action, _, State=#state{challenge=Challenges}) ->
+pending(_Action, _, State=#state{challenge=Challenges}) ->
     Conn  = get_conn(State),
 
     % checking status for each domain name
@@ -297,7 +297,7 @@ valid(_, _, State=#state{mode=Mode, domain=Domain, sans=SANs, cert_path=CertPath
 %%% 
 %%%
 
-handle_event(reset, StateName, State=#state{mode=Mode}) ->
+handle_event(reset, _StateName, State=#state{mode=Mode}) ->
     %io:format("reset from ~p state~n", [StateName]),
     challenge_destroy(Mode, State),
     {next_state, idle, State};
@@ -385,7 +385,7 @@ authz_step1([Domain|T], ChallengeType,
 -spec authz_step2(list(binary()), state()) -> {ok, nonce()} | {error, binary(), nonce()}.
 authz_step2([], #state{nonce=Nonce}) ->
     {ok, Nonce};
-authz_step2([{Domain, Challenge}|T], State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
+authz_step2([{_Domain, Challenge}|T], State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
                                                          acme_srv={Proto,AcmeDomain,AcmePort,_}}) ->
 
     #{uri := CUri, thumbprint := Thumbprint} = Challenge,
