@@ -7,9 +7,6 @@ otp_release:
     - 18.2.1
     - 17.5
 
-#env:
-#    - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
-
 services:
     - rabbitmq
     - mariadb
@@ -88,7 +85,13 @@ script:
     - ./rebar3 ct
 
 after_failure:
-    - elinks -dump 1 _build/test/logs/ct_run.*/_build.test.logs/run.*/suite.log.html
-    - elinks -dump 1 _build/test/logs/ct_run.*/_build.test.logs/run.*/letsencrypt_suite.test_*
-    - elinks -dump 1 _build/test/logs/ct_run.*/_build.test.logs/run.*/unexpected_io.log.html
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/letsencrypt_suite.test_*
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/unexpected_io.log.html
     - cat /tmp/boulder.log
+
+after_success:
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/letsencrypt_suite.test_*
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/unexpected_io.log.html
+
