@@ -22,7 +22,7 @@
 
 
 -ifdef(TEST).
-    -define(AGREEMENT_URL  , <<"http://boulder:4001/terms/v1">>).
+    -define(AGREEMENT_URL  , <<"http://boulder:4000/terms/v1">>).
     -define(debug(Fmt, Args), io:format(Fmt, Args)).
 -else.
     -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
