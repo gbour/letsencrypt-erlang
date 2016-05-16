@@ -29,6 +29,7 @@ addons:
 env:
     global:
         - GOPATH=/tmp/go
+        - GO15VENDOREXPERIMENT=1
         - PATH=$GOPATH/bin:$PATH
     matrix:
         - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
