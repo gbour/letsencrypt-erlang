@@ -1,0 +1,15 @@
+
+general:
+    # in days
+    renew_threshold: 5
+
+    notifications:
+        - type: email
+          to: me@example.com
+
+domains:
+    my.domain.tld:
+        - path: /path/to/certificate
+          mode: standalone
+          challenge: http-01
+          port: 8000
