@@ -19,15 +19,15 @@
 
 main([]) ->
     include_libs(),
-    getopt:usage(options_spec_list(), escript:script_name(), "[domain|certificate]");
+    getopt:usage(options_spec_list(), escript:script_name(), "[domain]");
 main(Args) ->
     include_libs(),
-    start([yamerl, qdate]),
+    start([letsencrypt, yamerl, qdate]),
 
     OptsSpecList = options_spec_list(),
     {ok, {Opts, Args2}} = getopt:parse(OptsSpecList, Args),
 
-    case parse_opts(Opts, #{short => false}) of
+    case parse_opts(Opts, #{short => false, force => false}) of
         help -> main([]);
         Ctx  ->
             #{conf := #{"domains" := Doms}} = Ctx,
@@ -42,6 +42,7 @@ main(Args) ->
                     end end, S2)
             end,
 
+            %io:format("~p~n~p~n----~n", [Selection, Ctx]),
             do(lists:sort(Selection), Ctx)
     end,
 
@@ -57,8 +58,12 @@ parse_opts([], Ctx) ->
     Ctx;
 parse_opts([list|T], Ctx) ->
     parse_opts(T, Ctx#{action => list});
+parse_opts([renew|T], Ctx) ->
+    parse_opts(T, Ctx#{action => renew});
 parse_opts([short|T], Ctx) ->
     parse_opts(T, Ctx#{short => true});
+parse_opts([force|T], Ctx) ->
+    parse_opts(T, Ctx#{force => true});
 parse_opts([{config, File}|T], Ctx) ->
     [Conf] = yamerl_constr:file(File),
     Conf2 = parse_conf(Conf, #{}),
@@ -80,7 +85,9 @@ parse_conf([_|T], Ctx) ->
 do([], _) ->
     io:format("  no domain found~n");
 do(Domains, #{action := list, short := Short, conf := #{"general" := General}}) ->
-    list(Domains, General#{short => Short}).
+    list(Domains, General#{short => Short});
+do(Domains, #{action := renew, force := Force, conf := #{"general" := General}}) ->
+    renew(Domains, General#{force => Force}).
    
 list([], _) ->
     ok;
@@ -141,8 +148,7 @@ list([{Domain, [Opts]}|T], Conf=#{short := false, "renew_threshold" := Threshold
     list(T, Conf);
 
 list([{Domain, [Opts]}|T], Conf=#{short := true, "renew_threshold" := Threshold}) ->
-    io:format(" * ~s~s", [color:on_white(color:black(Domain)), [" "||_ <-
-                                                                     lists:seq(1,40-string:len(Domain))]]),
+    io:format(" * ~s~s", [color:on_white(color:black(Domain)), [" "||_ <- lists:seq(1,40-string:len(Domain))]]),
     File = proplists:get_value("path", Opts) ++ "/" ++ Domain ++ ".crt",
 
     case get_certificate_infos(File) of
@@ -167,6 +173,75 @@ list([{Domain, [Opts]}|T], Conf=#{short := true, "renew_threshold" := Threshold}
     list(T, Conf).
 
 
+renew([], _) ->
+    ok;
+renew([{Domain, [Opts]} | T], Conf=#{force := Force, "renew_threshold" := Threshold}) ->
+    io:format(" * ~s~s", [color:on_white(color:black(Domain)), [" "||_ <- lists:seq(1,40-string:len(Domain))]]),
+
+    File = proplists:get_value("path", Opts) ++ "/" ++ Domain ++ ".crt",
+    Resp = case get_certificate_infos(File) of
+        % certificate file does not exit, we can create it
+        {error, enoent} -> create_certificate(File, Domain, Opts);
+
+        {ok, #{diff := DiffDays}} ->
+            if DiffDays >= Threshold andalso Force =/= true ->
+                    io:format("expiration is greater than threshold. Use -f option to force renew~n"),
+                    {error, not_expired};
+                true ->
+                    create_certificate(File, Domain, Opts)
+            end;
+
+        {error, _Err} ->
+            io:format("[~s_]~n", [_Err])
+    end,
+
+    case Resp of
+        {ok, _Paths} ->
+            io:format("renewed~n"),
+            [Action] = proplists:get_value("on_success", Opts, []),
+            on_success(maps:from_list(Action));
+
+        {error, not_expired} -> pass;
+
+        {error, Err} ->
+            io:format("fail to renew (err=~p)~n", [Err])
+    end,
+    renew(T, Conf).
+
+create_certificate(_File, Domain, Opts) ->
+    Staging   = proplists:get_value("staging", Opts, false),
+    Path      = proplists:get_value("path", Opts),
+    Mode      = list_to_atom(proplists:get_value("mode", Opts)),
+    Challenge = list_to_atom(proplists:get_value("challenge", Opts, "http-01")),
+
+    LOpts = case Mode of
+        standalone ->
+            Port = proplists:get_value("port", Opts),
+
+            [{mode, Mode},{port,Port},{cert_path, Path}];
+
+        webroot    ->
+            Webroot = proplists:get_value("webroot", Opts),
+            [{mode, Mode},{cert_path, Path},{webroot_path, Webroot}]
+    end,
+
+    %io:format("creating ~p (~p,~p,~p)~n", [File, Mode, Path, Port]),
+    LOpts2 = if Staging -> [staging|LOpts]; true -> LOpts end,
+    {ok, _Pid} = letsencrypt:start(LOpts2),
+    Resp = letsencrypt:make_cert(list_to_binary(Domain), #{challenge => Challenge, async => false}),
+    letsencrypt:stop(),
+
+    Resp.
+
+
+on_success(#{"engine" := "systemd", "unit" := Unit}) ->
+    Cmd = "systemctl reload '"++Unit++"'",
+
+    Out = os:cmd(Cmd),
+    io:format("~p~n", [Out]);
+on_success(_) ->
+    % ignored
+    ok.
 
 
 options_spec_list() ->
