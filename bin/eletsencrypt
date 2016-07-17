@@ -27,7 +27,7 @@ main(Args) ->
     OptsSpecList = options_spec_list(),
     {ok, {Opts, Args2}} = getopt:parse(OptsSpecList, Args),
 
-    case parse_opts(Opts, #{}) of
+    case parse_opts(Opts, #{short => false}) of
         help -> main([]);
         Ctx  ->
             #{conf := #{"domains" := Doms}} = Ctx,
@@ -55,8 +55,10 @@ start([App|T]) ->
 
 parse_opts([], Ctx) ->
     Ctx;
-parse_opts([show|T], Ctx) ->
-    parse_opts(T, Ctx#{action => show});
+parse_opts([list|T], Ctx) ->
+    parse_opts(T, Ctx#{action => list});
+parse_opts([short|T], Ctx) ->
+    parse_opts(T, Ctx#{short => true});
 parse_opts([{config, File}|T], Ctx) ->
     [Conf] = yamerl_constr:file(File),
     Conf2 = parse_conf(Conf, #{}),
@@ -77,39 +79,24 @@ parse_conf([_|T], Ctx) ->
 
 do([], _) ->
     io:format("  no domain found~n");
-do(Domains, #{action := show, conf := #{"general" := General}}) ->
-    show(Domains, General).
+do(Domains, #{action := list, short := Short, conf := #{"general" := General}}) ->
+    list(Domains, General#{short => Short}).
    
-show([], _) ->
+list([], _) ->
     ok;
-show([{Domain, [Opts]}|T], Conf=#{"renew_threshold" := Threshold}) ->
+list([{Domain, [Opts]}|T], Conf=#{short := false, "renew_threshold" := Threshold}) ->
     io:format("~n----~ndomain ~s~n", [color:on_white(color:black(Domain))]),
     File = proplists:get_value("path", Opts) ++ "/" ++ Domain ++ ".crt",
 
-    case file:read_file(File) of
-        {ok, Pem} -> 
-            [{'Certificate',Cert,_}|_] = public_key:pem_decode(Pem),
+    case get_certificate_infos(File) of
+        {ok, #{subject := Subject, diff := DiffDays, issuer := Issuer, start := Start, 'end' := End,
+               altnames := AltNames}} -> 
 
-            #'OTPCertificate'{tbsCertificate = #'OTPTBSCertificate'{
-                issuer     = Issuer,
-                validity   = #'Validity'{notBefore = Start, notAfter= End},
-                subject    = _Subject,
-                extensions = Exts
-            }} = public_key:pkix_decode_cert(Cert, otp),
-
-            % matching subject
-            Subject = rdnSeq(_Subject, ?'id-at-commonName'),
             case Subject of
                 Domain -> pass;
                 Fail   -> io:format("  ~s~n", [
                     color:red(io_lib:format("[Certificate subject (~p) do not match file name]", [Fail]))])
             end,
-
-            % days before expiration
-            {DiffDays, {_DiffHours,_,_}}    = calendar:seconds_to_daystime(
-                calendar:datetime_to_gregorian_seconds(to_date(End))-
-                calendar:datetime_to_gregorian_seconds(calendar:universal_time())
-            ),
 
             Msg = if DiffDays < 0 ->
                     color:red(io_lib:format("[Certificate is expired since ~p days]", [-DiffDays]));
@@ -120,7 +107,7 @@ show([{Domain, [Opts]}|T], Conf=#{"renew_threshold" := Threshold}) ->
             end,
             io:format("  ~s~n", [Msg]),
 
-            case list_to_binary(rdnSeq(Issuer, ?'id-at-commonName')) of
+            case list_to_binary(Issuer) of
                 <<"Fake LE", _/binary>> ->
                     io:format("  ~s~n", [color:rgb([5,3,0], "[Certificate is issued on staging]")]);
                 <<"Let's Encrypt Authority", _/binary>> -> pass;
@@ -132,18 +119,16 @@ show([{Domain, [Opts]}|T], Conf=#{"renew_threshold" := Threshold}) ->
             io:format("~n  . issuer     : ~p~n" ++
                       "  . created on : ~p~n" ++
                       "  . expire  on : ~p~n",
-                [rdnSeq(Issuer, ?'id-at-commonName'),
-                 qdate:to_string("Y-m-d H:i T", to_date(Start)),
-                 qdate:to_string("Y-m-d H:i T", to_date(End))
+                [Issuer,
+                 qdate:to_string("Y-m-d H:i T", Start),
+                 qdate:to_string("Y-m-d H:i T", End)
                 ]
             ),
 
             % alt names
-            case exten(Exts, ?'id-ce-subjectAltName') of
+            case AltNames of
                 undefined -> pass;
-                [Subject] -> pass;
-                AltNames -> io:format("  . alt names  : ~p~n", [
-                    lists:delete(Subject, AltNames)])
+                AltNames  -> io:format("  . alt names  : ~p~n", [AltNames])
             end,
 
             ok;
@@ -153,15 +138,42 @@ show([{Domain, [Opts]}|T], Conf=#{"renew_threshold" := Threshold}) ->
                       [color:red(io_lib:format("[Cannot read ~p certificate file (reason=~p)]", [File, Err]))])
     end,
 
-    show(T, Conf).
+    list(T, Conf);
+
+list([{Domain, [Opts]}|T], Conf=#{short := true, "renew_threshold" := Threshold}) ->
+    io:format(" * ~s~s", [color:on_white(color:black(Domain)), [" "||_ <-
+                                                                     lists:seq(1,40-string:len(Domain))]]),
+    File = proplists:get_value("path", Opts) ++ "/" ++ Domain ++ ".crt",
+
+    case get_certificate_infos(File) of
+        {ok, #{diff := DiffDays, issuer := Issuer}} -> 
+
+            Status = if DiffDays < 0 -> color:red("E");
+                DiffDays < Threshold -> color:orange("N");
+                true                 -> color:green("V")
+            end,
+            Issued = case list_to_binary(Issuer) of
+                <<"Fake LE", _/binary>>                 -> color:rgb([5,3,0], "S");
+                <<"Let's Encrypt Authority", _/binary>> -> color:green("P");
+                _                                       -> color:red("X") 
+            end,
+
+            io:format("[~s~s]~n", [Status, Issued]);
+
+        {error, _Err} -> 
+            io:format("[~s_]~n", [color:red("X")])
+    end,
+
+    list(T, Conf).
+
 
 
 
 options_spec_list() ->
     [
         {help  , $h, "help"  , undefined, undefined},
-        %{list  , $l, "list"  , undefined, "list configured certificates"},
-        {show  , $s, "show"  , undefined, "show certificate(s) informations"},
+        {list  , $l, "list"  , undefined, "list certificate(s) w/ informations"},
+        {short , $s, "short" , undefined, "short form list"},
         {renew , $r, "renew" , undefined, "create/renew certificate(s)"},
         {force , $f, "force" , undefined, "force renewal event if certificate not expired"},
         {config, $c, "config", {string, "etc/eletsencrypt.yml"}, "eletsencrypt configuration file"} 
@@ -210,5 +222,42 @@ to_date({utcTime, Date}) ->
             {{2000+Y, M, D}, {H, Mm, S}};
 
         _ -> error
+    end.
+
+get_certificate_infos(File) ->
+    case file:read_file(File) of
+        {error, Err} -> {error, Err};
+        {ok, Pem}    -> 
+            [{'Certificate',Cert,_}|_] = public_key:pem_decode(Pem),
+
+            #'OTPCertificate'{tbsCertificate = #'OTPTBSCertificate'{
+                issuer     = Issuer,
+                validity   = #'Validity'{notBefore = Start, notAfter= End},
+                subject    = _Subject,
+                extensions = Exts
+            }} = public_key:pkix_decode_cert(Cert, otp),
+
+            % days before expiration
+            {DiffDays, {_DiffHours,_,_}}    = calendar:seconds_to_daystime(
+                calendar:datetime_to_gregorian_seconds(to_date(End))-
+                calendar:datetime_to_gregorian_seconds(calendar:universal_time())
+            ),
+
+
+            Subject  = rdnSeq(_Subject, ?'id-at-commonName'),
+            AltNames = case exten(Exts, ?'id-ce-subjectAltName') of
+                undefined -> undefined;
+                [Subject] -> undefined;
+                Alts      -> lists:delete(Subject, Alts)
+            end,
+
+            {ok, #{
+               subject  => Subject, 
+               issuer   => rdnSeq(Issuer, ?'id-at-commonName'),
+               start    => to_date(Start),
+               'end'    => to_date(End), 
+               diff     => DiffDays,
+               altnames => AltNames
+            }}
     end.
 
