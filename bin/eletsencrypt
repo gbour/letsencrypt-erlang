@@ -15,9 +15,6 @@
 %% See the License for the specific language governing permissions and
 %% limitations under the License.
 
-%% author: Guillaume Bour <guillaume@bour.cc>
-%%
-
 -include_lib("public_key/include/public_key.hrl").
 
 main([]) ->
@@ -28,13 +25,24 @@ main(Args) ->
     start([yamerl, qdate]),
 
     OptsSpecList = options_spec_list(),
-    {ok, {Opts, _Args2}} = getopt:parse(OptsSpecList, Args),
+    {ok, {Opts, Args2}} = getopt:parse(OptsSpecList, Args),
 
     case parse_opts(Opts, #{}) of
         help -> main([]);
         Ctx  ->
-            %io:format("~p~n~p~n----~n", [Args2, Ctx]),
-            do(Ctx)
+            #{conf := #{"domains" := Doms}} = Ctx,
+
+            Selection = case Args2 of
+                [] -> maps:to_list(Doms);
+
+                S2 -> lists:filtermap(fun(D) ->
+                    case maps:get(D, Doms, undefined) of
+                        undefined -> false;
+                        V         -> {true, {D, V}}
+                    end end, S2)
+            end,
+
+            do(lists:sort(Selection), Ctx)
     end,
 
     ok.
@@ -67,8 +75,10 @@ parse_conf([_|T], Ctx) ->
     parse_conf(T, Ctx).
 
 
-do(#{action := show, conf := #{"domains" := Domains, "general" := General}}) ->
-    show(maps:to_list(Domains), General).
+do([], _) ->
+    io:format("  no domain found~n");
+do(Domains, #{action := show, conf := #{"general" := General}}) ->
+    show(Domains, General).
    
 show([], _) ->
     ok;
