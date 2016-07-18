@@ -65,7 +65,7 @@ before_install:
 
 install:
     - ./rebar3 update
-    - ./rebar3 compile
+    - DEBUG=1 ./rebar3 compile
 
 before_script:
     # serve CA certificate
