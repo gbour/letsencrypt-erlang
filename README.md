@@ -79,6 +79,9 @@ Params is a list of parameters, choose from the followings:
     **standalone**
   * **{cert_path, Path}**: pinpoint path to store generated certificates.
     Must be writable by erlang process
+  * **{connect_timeout, Timeout}** (integer, optional, default to 30000): network connection timeout
+    (in milliseconds)  
+
   
   Mode-specific parameters:
   * _webroot_ mode:

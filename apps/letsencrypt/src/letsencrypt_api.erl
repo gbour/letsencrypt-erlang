@@ -15,8 +15,8 @@
 -module(letsencrypt_api).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([connect/1, close/1, get_nonce/2, new_reg/4, new_authz/6, challenge/6, challenge/3]).
--export([new_cert/5, get_intermediate/1]).
+-export([connect/1, connect/2, close/1, get_nonce/2, new_reg/4, new_authz/6, challenge/6, challenge/3]).
+-export([new_cert/5, get_intermediate/2]).
 
 -import(letsencrypt_utils, [bin/1]).
 
@@ -30,9 +30,13 @@
 -endif.
 
 -spec connect(letsencrypt:uri()) -> pid().
-connect({Proto, Domain, Port, _}) ->
-    {ok, Conn} = shotgun:open(Domain, Port, Proto),
+connect(Uri) ->
+    connect(Uri, #{}).
+-spec connect(letsencrypt:uri(), Opts::map()) -> pid().
+connect({Proto, Domain, Port, _}, Opts) ->
+    {ok, Conn} = shotgun:open(Domain, Port, Proto, Opts),
     Conn.
+
 
 
 -spec close(pid()) -> ok|{error,term()}.
@@ -179,9 +183,9 @@ post(Conn, Path, Headers, Content) ->
     {ok, Nonce, Body}.
 
 
--spec get_intermediate(letsencrypt:uri()) -> {ok, binary()}.
-get_intermediate({Proto, Domain, Port, Path}) ->
-    {ok, Conn} = shotgun:open(Domain, Port, Proto),
+-spec get_intermediate(letsencrypt:uri(), Opts::map()) -> {ok, binary()}.
+get_intermediate({Proto, Domain, Port, Path}, Opts) ->
+    {ok, Conn} = shotgun:open(Domain, Port, Proto, Opts),
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
     shotgun:close(Conn),
 
