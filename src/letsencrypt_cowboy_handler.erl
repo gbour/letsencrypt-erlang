@@ -14,11 +14,11 @@
 
 -module(letsencrypt_cowboy_handler).
 
--export([init/2]).
+-export([init/3, handle/2, terminate/3]).
 
 
-init(Req, []) ->
-    Host = cowboy_req:host(Req),
+init(_, Req, []) ->
+    {Host,_} = cowboy_req:host(Req),
     %io:format("COWBOY: host= ~p~n    req ~p~n", [Host,Req]),
 
     % NOTES
@@ -27,15 +27,25 @@ init(Req, []) ->
     %
     % NOTE: keep <18.0 compatibility
     Challenges = letsencrypt:get_challenge(),
-    Req2 = case {cowboy_req:binding(token, Req), maps:get(Host, Challenges, undefined)} of
-        {Token, #{token := Token, thumbprint := Thumbprint}} ->
+    {Token,_}  = cowboy_req:binding(token, Req),
+
+    {ok, Req2} = case maps:get(Host, Challenges, undefined) of
+        #{token := Token, thumbprint := Thumbprint} ->
             %io:format("match: ~p -> ~p~n", [Token, Thumbprint]),
             cowboy_req:reply(200, [{<<"content-type">>, <<"text/plain">>}], Thumbprint, Req);
 
         _X     ->
-            %io:format("nomatch: ~p~n", [_X]),
+            %io:format("nomatch: ~p -> ~p~n", [Token, _X]),
             cowboy_req:reply(404, Req)
     end,
+    %io:format("reply= ~p~n", [Req2]),
 
-    {ok, Req2, []}.
+    {ok, Req2, no_state}.
 
+handle(Req, State) ->
+    %io:format("handle: ~p~n", [Req]),
+    {ok, Req, State}.
+
+terminate(Reason, Req, State) ->
+    %io:format("terminate: ~p~n", [Reason]),
+    ok.
