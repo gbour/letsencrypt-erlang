@@ -13,7 +13,7 @@ Features:
 - [x] SAN certificate (supplementary domain names)
 - [ ] allow EC keys
 - [ ] choose RSA key length
-- [ ] unittests
+- [x] unittests
 
 Modes
 - [x] webroot
