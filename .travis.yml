@@ -4,12 +4,12 @@ dist: trusty
 language: erlang
 
 otp_release:
+    - 19.0
     - 18.2.1
     - 17.5
 
 services:
-    - rabbitmq
-    - mariadb
+    - docker
 
 addons:
     apt:
@@ -17,19 +17,13 @@ addons:
             - elinks
             - rsyslog
 
-    mariadb: "10.0"
-
-    hosts:
-        - le.wtf
-        - le2.wtf
-        - boulder
-        - boulder-mysql
-        - boulder-rabbitmq
-
 env:
     global:
         - GOPATH=/tmp/go
+        - GO15VENDOREXPERIMENT=1
         - PATH=$GOPATH/bin:$PATH
+        - DOCKER_VERSION=1.9.1-0~trusty
+
     matrix:
         - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
         #- BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
@@ -46,25 +40,18 @@ before_install:
     - git clone --depth=1 https://github.com/jeanparpaillon/averell.git averell
     - cd averell && make && make
     - cd $TRAVIS_BUILD_DIR
-    # letsencrypt server
+    # letsencrypt server - requires docker >= 1.9
+    # - sudo apt-get -o Dpkg::Options::="--force-confnew" install -y docker-engine=${DOCKER_VERSION}
+    - pip install --user docker-compose
     - go version
+    - docker --version
+    - ~/.local/bin/docker-compose version
     - git clone https://github.com/letsencrypt/boulder.git $GOPATH/src/github.com/letsencrypt/boulder
-    - cd $GOPATH/src/github.com/letsencrypt/boulder
-    #- go get github.com/tools/godep
-    #- godep restore -v
-    # we want to test agains version running on prod
-    #- BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
-    - REV=`elinks -dump $BOULDER_BUILD|sed -e "s/.*Boulder=( +\([0-9a-f]\+\) .*/\1/"`
-    - echo "using boulder rev +$REV"
-    - git checkout $REV
-    - test/setup.sh
-    - go get github.com/jsha/listenbuddy
-    #- ls $GOPATH/bin $GOPATH/pkg/*/* $GOPATH/src/*
     - cd $TRAVIS_BUILD_DIR
 
 install:
     - ./rebar3 update
-    - ./rebar3 compile
+    - DEBUG=1 ./rebar3 compile
 
 before_script:
     # serve CA certificate
@@ -74,7 +61,12 @@ before_script:
     # prevent limiting certificates generation
     - "sed -i 's/threshold: 5/threshold: 100/' test/rate-limit-policies.yml"
     #- cat test/rate-limit-policies.yml
-    - ./start.py > /tmp/boulder.log&
+    # we must set FAKE_DNS addr as localhost viewed by docker guest
+    - export DOCKER_IP=`ip addr show docker0|grep "inet "|sed -e "s/.*inet \([^ \/]\+\).*/\1/"`
+    - "sed -ie \"s/FAKE_DNS: .*/FAKE_DNS: $DOCKER_IP/g\" docker-compose.yml"
+    - cat docker-compose.yml
+    # running boulder server (in docker)
+    - ~/.local/bin/docker-compose up > /tmp/boulder.log&
     - cd $TRAVIS_BUILD_DIR
     # waiting for boulder being fully started
     - r=1; while [ $r -ne 0 ] ; do elinks -dump http://localhost:4000/directory 2>/dev/null; r=$?; sleep 5; done
