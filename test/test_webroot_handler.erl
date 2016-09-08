@@ -1,9 +1,10 @@
 
 -module(test_webroot_handler).
--export([init/2]).
+-export([init/3, handle/2, terminate/3]).
 
-init(Req, []) ->
-    File = <<"/tmp", (cowboy_req:path(Req))/binary>>,
+init(_, Req, []) ->
+    {Path, _} = cowboy_req:path(Req),
+    File = <<"/tmp", Path/binary>>,
     io:format("reading ~p~n", [File]),
 
     Req2 = case file:read_file(File) of
@@ -14,4 +15,10 @@ init(Req, []) ->
             cowboy_req:reply(404, Req)
     end,
 
-    {ok, Req2, []}.
+    {ok, Req2, no_state}.
+
+handle(Req, State) ->
+    {ok, Req, State}.
+
+terminate(_Reason, _Req, _State) ->
+    ok.
