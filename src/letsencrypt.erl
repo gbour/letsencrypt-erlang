@@ -35,12 +35,12 @@
 -ifdef(TEST).
     -define(STAGING_API_URL      , "http://127.0.0.1:4000/acme").
     -define(DEFAULT_API_URL      , "").
-    -define(INTERMEDIATE_CERT_URL, "http://127.0.0.1:3099/test/test-ca.pem").
+    -define(INTERMEDIATE_CERT_URL, <<"http://127.0.0.1:3099/test/test-ca.pem">>).
 -else.
     -define(STAGING_API_URL      , "https://acme-staging.api.letsencrypt.org/acme").
     -define(DEFAULT_API_URL      , "https://acme-v01.api.letsencrypt.org/acme").
     %TODO: dynamically get xs certificate given the one used to sign the generated one
-    -define(INTERMEDIATE_CERT_URL, "https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem").
+    -define(INTERMEDIATE_CERT_URL, <<"https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem">>).
 -endif.
 %-define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
 
@@ -102,9 +102,7 @@ init(Args) ->
     Key = letsencrypt_ssl:private_key(State2#state.key_file, State2#state.cert_path),
     Jws = letsencrypt_jws:init(Key),
 
-    {ok, {IProto, _, IHost, IPort, IPath, _}} = http_uri:parse(?INTERMEDIATE_CERT_URL),
-    {ok, IntermediateCert} = letsencrypt_api:get_intermediate({IProto, IHost, IPort, IPath},
-                                                              State2#state.connect_opts),
+    {ok, IntermediateCert} = letsencrypt_api:get_intermediate(?INTERMEDIATE_CERT_URL, State2#state.connect_opts),
 
     {ok, idle, State2#state{acme_srv=AcmeSrv, key=Key, jws=Jws, intermediate_cert=IntermediateCert}}.
 

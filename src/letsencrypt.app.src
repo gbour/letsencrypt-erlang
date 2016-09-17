@@ -5,9 +5,9 @@
   {applications,
    [kernel,
     stdlib,
-    shotgun,
     jiffy,
-    cowboy
+    cowboy,
+    hackney
    ]},
   {env,[]},
   {modules, []},

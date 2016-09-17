@@ -34,20 +34,23 @@ connect(Uri) ->
     connect(Uri, #{}).
 -spec connect(letsencrypt:uri(), Opts::map()) -> pid().
 connect({Proto, Domain, Port, _}, Opts) ->
-    {ok, Conn} = shotgun:open(Domain, Port, Proto, Opts),
-    Conn.
-
+    {ok, ConnRef} = hackney:connect(hackney_ssl_transport, Domain, Port, []),
+    ConnRef.
 
 
 -spec close(pid()) -> ok|{error,term()}.
 close(Conn) ->
-    shotgun:close(Conn).
+    hackney:close(Conn).
 
 
 -spec get_nonce(pid(), string()) -> binary().
 get_nonce(Conn, BasePath) ->
-    {ok, #{headers := Headers}} = shotgun:get(Conn, BasePath++"/new-reg", #{}, #{}),
-    proplists:get_value(<<"replay-nonce">>, Headers).
+    {ok, StatusCode, Headers, _} = hackney:send_request(Conn, {get, bin(BasePath++"/new-reg"), [], <<>>}),
+    ?debug("nonce: ~p, ~p~n", [StatusCode, Headers]),
+    % NOTE: required even if useless here, or following requests are failing with {error, invalide_state}
+    _ = hackney:body(Conn),
+
+    proplists:get_value(<<"Replay-Nonce">>, Headers).
 
 
 -spec new_reg(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws()) -> letsencrypt:nonce().
@@ -140,9 +143,8 @@ challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
 % 'ok'|'invalid' => make custom type (derived from atom())
 -spec challenge(status, pid(), string()) -> {'ok'|'invalid', atom()|binary()}.
 challenge(status, Conn, Path) ->
-    {ok, Resp} = shotgun:get(Conn, Path, #{}),
-    #{body := Body} = Resp,
-    %io:format("challenge status: ~p~n", [Body]),
+    {ok, StatusCode, RHeaders, _} = hackney:send_request(Conn, {get, bin(Path), [], <<>>}),
+    {ok, Body} = hackney:body(Conn),
 
     Payload = #{<<"status">> := Status} = jiffy:decode(Body, [return_maps]),
     case status(Status) of
@@ -174,23 +176,20 @@ new_cert(Conn, Path, Key, Jws, Csr) ->
 -spec post(pid(), string(), map(), binary()) -> {ok, letsencrypt:nonce(), binary()}.
 post(Conn, Path, Headers, Content) ->
     ?debug("== POST ~p~n", [Path]),
-    {ok, Resp} = shotgun:post(Conn, Path, Headers#{<<"Content-Type">> => <<"application/jose+json">>}, 
-                              Content, #{}),
-    ?debug("resp= ~p~n", [Resp]),
-    #{body := Body, headers := RHeaders, status_code := _Status} = Resp,
+    {ok, StatusCode, RHeaders, _} = hackney:send_request(Conn, {post, bin(Path), maps:to_list(Headers), Content}),
+    {ok, Body} = hackney:body(Conn),
+    ?debug("resp= ~p, ~p~n", [StatusCode, Body]),
 
-    Nonce = proplists:get_value(<<"replay-nonce">>, RHeaders),
+    Nonce = proplists:get_value(<<"Replay-Nonce">>, RHeaders),
     {ok, Nonce, Body}.
 
 
--spec get_intermediate(letsencrypt:uri(), Opts::map()) -> {ok, binary()}.
-get_intermediate({Proto, Domain, Port, Path}, Opts) ->
-    {ok, Conn} = shotgun:open(Domain, Port, Proto, Opts),
-    {ok, Resp} = shotgun:get(Conn, Path, #{}),
-    shotgun:close(Conn),
+-spec get_intermediate(binary(), Opts::map()) -> {ok, binary()}.
+get_intermediate(Uri, Opts) ->
+    {ok, StatusCode, Headers, Ref} = hackney:get(Uri, [], <<>>, []),
+    {ok, Body} = hackney:body(Ref),
+    ?debug("intermediate: ~p, ~p~n", [StatusCode, Headers]),
 
-    %io:format("resp= ~p~n", [Resp]),
-    #{body := Body} = Resp,
     {ok, Body}.
 
 -spec status(binary()) -> atom().
