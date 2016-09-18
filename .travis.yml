@@ -58,6 +58,11 @@ before_script:
     - averell/averell -p 3099 -v $GOPATH/src/github.com/letsencrypt/boulder&
     #
     - cd $GOPATH/src/github.com/letsencrypt/boulder
+    # switch to prod/staging version
+    - REV=`elinks -dump $BOULDER_BUILD|sed -e "s/.*Boulder=( +\([0-9a-f]\+\) .*/\1/"`
+    - echo "using boulder rev +$REV"
+    - git checkout $REV
+    - git log -1
     # prevent limiting certificates generation
     - "sed -i 's/threshold: 5/threshold: 100/' test/rate-limit-policies.yml"
     #- cat test/rate-limit-policies.yml
