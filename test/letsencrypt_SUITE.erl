@@ -111,26 +111,32 @@ test_slave(Config) ->
     Port = proplists:get_value(port, Config),
     %cowboy:stop_listener(my_http_listener),
     elli:start_link([
-        {name    , {local, my_http_listener}},
+        {name    , {local, my_test_slave_listener}},
         {callback, letsencrypt_elli_handler},
         {port    , Port}
     ]),
 
-    priv_COMMON(slave, Config, []),
-    elli:stop(my_http_listener).
+    try priv_COMMON(slave, Config, []) of
+        Ret -> Ret
+    after
+        elli:stop(my_test_slave_listener)
+    end.
 
 test_webroot(Config) ->
     Port = proplists:get_value(port, Config),
     %cowboy:stop_listener(webroot_listener),
 
     elli:start_link([
-        {name    , {local, my_http_listener}},
+        {name    , {local, my_test_webroot_listener}},
         {callback, test_webroot_handler},
         {port    , Port}
     ]),
 
-    priv_COMMON(webroot, Config, [{webroot_path, "/tmp"}]),
-    elli:stop(my_http_listener).
+    try priv_COMMON(webroot, Config, [{webroot_path, "/tmp"}]) of
+        Ret -> Ret
+    after
+        elli:stop(my_test_webroot_listener)
+    end.
 
 %%
 %% PRIVATE
