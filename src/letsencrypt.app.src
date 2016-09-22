@@ -7,7 +7,7 @@
     stdlib,
     shotgun,
     jiffy,
-    cowboy
+    elli
    ]},
   {env,[]},
   {modules, []},

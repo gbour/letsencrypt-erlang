@@ -1,24 +1,25 @@
 
 -module(test_webroot_handler).
--export([init/3, handle/2, terminate/3]).
+-behaviour(elli_handler).
 
-init(_, Req, []) ->
-    {Path, _} = cowboy_req:path(Req),
+-include_lib("elli/include/elli.hrl").
+-export([handle/2, handle_event/3]).
+
+
+handle(Req, _Args) ->
+    {Path, _} = elli_request:raw_path(Req),
     File = <<"/tmp", Path/binary>>,
     io:format("reading ~p~n", [File]),
 
-    Req2 = case file:read_file(File) of
+    case file:read_file(File) of
         {ok, Content} ->
-            cowboy_req:reply(200, [{<<"content-type">>, <<"text/plain">>}], Content, Req);
+            {200, [{<<"Content-Type">>, <<"text/plain">>}], Content};
 
         _ ->
-            cowboy_req:reply(404, Req)
-    end,
+            {404, [], <<"Not Found">>}
+    end.
 
-    {ok, Req2, no_state}.
 
-handle(Req, State) ->
-    {ok, Req, State}.
-
-terminate(_Reason, _Req, _State) ->
+% request events. Unused
+handle_event(_, _, _) ->
     ok.
