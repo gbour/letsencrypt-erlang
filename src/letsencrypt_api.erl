@@ -65,8 +65,8 @@ new_reg(Conn, Path, Key, Jws) ->
 
 -spec new_authz(pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary(),
                 letsencrypt:challenge_type()) ->
-    {'ok'   , map()               , letsencrypt:nonce()} |
-    {'error', 'uncatched'|binary(), letsencrypt:nonce()}.
+    {ok   , map()                         , letsencrypt:nonce()} |
+    {error, uncatched|nochallenge|binary(), letsencrypt:nonce()}.
 new_authz(Conn, Path, Key, Jws, Domain, ChallengeType) ->
     Payload = #{
         resource => 'new-authz',
@@ -82,20 +82,28 @@ new_authz(Conn, Path, Key, Jws, Domain, ChallengeType) ->
     Body = jiffy:decode(JsonBody, [return_maps]),
 
     case Body of
-        #{<<"status">> := <<"pending">>, <<"challenges">> := Challenges} ->
-            % get http-01 challenge
-            [Challenge] = lists:filter(fun(C) -> 
-                    maps:get(<<"type">>, C, error) =:= bin(ChallengeType)
-                end,
-                Challenges
-            ),
-
-            {ok, Challenge, Nonce};
+        #{<<"challenges">> := Challenges} ->
+            % get first challenge of the correct type
+            CTBin = bin(ChallengeType),
+            case lists:filter(
+                    fun
+                        (#{<<"type">> := CT, <<"status">> := <<"pending">>}) when CT =:= CTBin -> true;
+                        (#{<<"type">> := CT, <<"status">> := <<"valid">>}) when CT =:= CTBin -> true;
+                        (_) -> false
+                    end,
+                    Challenges)
+            of
+                [Challenge|_] ->
+                    {ok, Challenge, Nonce};
+                [] ->
+                    {error, nochallenge, Nonce}
+            end;
 
         #{<<"detail">> := Msg} ->
             {error, Msg, Nonce};
 
         _ ->
+            error_logger:error_msg("Unexpected return from Letsencrypt: ~p", [Body]),
             {error, uncatched, Nonce}
     end.
 
@@ -103,23 +111,25 @@ new_authz(Conn, Path, Key, Jws, Domain, ChallengeType) ->
 -spec challenge(pre , pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()) -> map();
                (post, pid(), string(), letsencrypt:ssl_privatekey(), letsencrypt:jws(), binary()) -> letsencrypt:nonce().
 challenge(pre, _, _, Key, _,
-          _Challenge=#{<<"type">> := <<"http-01">>, <<"token">> := Token, <<"uri">> := Uri}) ->
+          Challenge=#{<<"type">> := <<"http-01">>, <<"token">> := Token, <<"uri">> := Uri}) ->
     #{
         type       => 'http-01',
         %path => "/.well-known/acme-challenge/",
         uri        => Uri,
         token      => Token,
-        thumbprint => letsencrypt_jws:thumbprint(Key, Token)
+        thumbprint => letsencrypt_jws:thumbprint(Key, Token),
+        status     => maps:get(<<"status">>, Challenge)
     };
 
 challenge(pre, _, _, Key, _,
-          _Challenge=#{<<"type">> := <<"tls-sni-01">>, <<"token">> := Token, <<"uri">> := Uri}) ->
+          Challenge=#{<<"type">> := <<"tls-sni-01">>, <<"token">> := Token, <<"uri">> := Uri}) ->
     #{
         type       => 'tls-sni-01',
         %path => "/.well-known/acme-challenge/",
         uri        => Uri,
         token      => Token,
-        thumbprint => letsencrypt_jws:thumbprint(Key, Token)
+        thumbprint => letsencrypt_jws:thumbprint(Key, Token),
+        status     => maps:get(<<"status">>, Challenge)
        % san        => letsencrypt_jws:san(Key, Token)
     };
 

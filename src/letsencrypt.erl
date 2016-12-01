@@ -17,7 +17,9 @@
 -behaviour(gen_fsm).
 
 -export([make_cert/2, make_cert_bg/2, get_challenge/0]).
--export([start/1, stop/0, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
+-export([make_cert/3, make_cert_bg/3, get_challenge/1]).
+
+-export([start/1, start_link/2, stop/0, stop/1, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 -export([idle/3, pending/3, valid/3]).
 
 -import(letsencrypt_utils, [bin/1, str/1]).
@@ -30,7 +32,9 @@
 -type jws()            :: #{'alg' => 'RS256', 'jwk' => map(), nonce => undefined|letsencrypt:nonce() }.
 -type ssl_privatekey() :: #{'raw' => crypto:rsa_private(), 'b64' => {binary(), binary()}, 'file' => string()}.
 -type ssl_csr()        :: binary().
+-type fsm_ref()        :: atom() | {atom(), atom()} | {global, term()} | {via, module(), term()} | pid().
 
+-export_type([mode/0, challenge_type/0, uri/0, nonce/0, jws/0, ssl_privatekey/0, ssl_csr/0, fsm_ref/0]).
 
 -ifdef(TEST).
     -define(STAGING_API_URL      , "http://127.0.0.1:4000/acme").
@@ -45,6 +49,7 @@
 %-define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
 
 -define(WEBROOT_CHALLENGE_PATH, <<"/.well-known/acme-challenge">>).
+-define(DEFAULT_FSM, {global, ?MODULE}).
 
 -record(state, {
     acme_srv = ?DEFAULT_API_URL     :: uri() | string(),
@@ -75,15 +80,27 @@
 
 -type state() :: #state{}.
 
--spec start(list()) -> {'ok', pid}|{'error', {'already_started',pid()}}.
+-spec start(list()) -> {ok, pid()} | {error, {already_started,pid()}}.
 start(Args) ->
-    gen_fsm:start_link({global, ?MODULE}, ?MODULE, Args, []).
+    start_link(?DEFAULT_FSM, Args).
 
--spec stop() -> 'ok'.
+
+-spec start_link(fsm_ref()|undefined, list()) -> {ok, pid()} | {error, {already_started,pid()}}.
+start_link(undefined, Args) ->
+    gen_fsm:start_link(?MODULE, Args, []);
+start_link(FSMRef, Args) ->
+    gen_fsm:start_link(FSMRef, ?MODULE, Args, []).
+
+
+-spec stop() -> ok.
 stop() ->
+    stop(?DEFAULT_FSM).
+
+-spec stop(fsm_ref()) -> ok.
+stop(FSMRef) ->
     %NOTE: maintain compatibility with 17.X versions
-    %gen_fsm:stop({global, ?MODULE})
-    gen_fsm:sync_send_all_state_event({global, ?MODULE}, stop).
+    %gen_fsm:stop(FSMRef)
+    gen_fsm:sync_send_all_state_event(FSMRef, stop).
 
 
 %%
@@ -164,63 +181,64 @@ getopts([Unk|_], _) ->
 -spec make_cert(string()|binary(), map()) -> {'ok', #{cert => binary(), key => binary()}}|
                                              {'error','invalid'}|
                                              async.
-make_cert(Domain, Opts=#{async := false}) ->
-    make_cert_bg(Domain, Opts);
-% default to async = true
 make_cert(Domain, Opts) ->
-    _Pid = erlang:spawn(?MODULE, make_cert_bg, [Domain, Opts#{async => true}]),
+    make_cert(?DEFAULT_FSM, Domain, Opts).
+
+make_cert(FSM, Domain, Opts=#{async := false}) ->
+    make_cert_bg(FSM, Domain, Opts);
+make_cert(FSM, Domain, Opts) ->
+    % default to async = true
+    _Pid = erlang:spawn(?MODULE, make_cert_bg, [FSM, Domain, Opts#{async => true}]),
     async.
 
 -spec make_cert_bg(string()|binary(), map()) -> {'ok', map()}|{'error', 'invalid'}.
-make_cert_bg(Domain, Opts=#{async := Async}) ->
-    Ret = case gen_fsm:sync_send_event({global, ?MODULE}, {create, bin(Domain), Opts}, 15000) of
+make_cert_bg(Domain, Opts) ->
+    make_cert_bg(?DEFAULT_FSM, Domain, Opts).
+
+-spec make_cert_bg(fsm_ref(), string()|binary(), map()) -> {'ok', map()}|{'error', 'invalid'}.
+make_cert_bg(FSM, Domain, Opts=#{async := Async}) ->
+    Ret = case gen_fsm:sync_send_event(FSM, {create, bin(Domain), Opts}, 15000) of
         {error, Err} ->
             %io:format("error: ~p~n", [Err]),
             {error, Err};
-
         ok ->
             %io:format("ok: ~p~n", [Path]),
-
-            case wait_valid(10) of
+            case wait_valid(FSM, 10, 10) of
                 ok ->
-                    gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
-
+                    gen_fsm:sync_send_event(FSM, finalize, 15000);
                 Error ->
-                    gen_fsm:send_all_state_event({global, ?MODULE}, reset),
+                    gen_fsm:send_all_state_event(FSM, reset),
                     Error
             end
     end,
-
     case Async of
         true ->
             Callback = maps:get(callback, Opts, fun(_) -> ok end),
             Callback(Ret);
-
         _    ->
             ok
     end,
-
     Ret.
 
--spec wait_valid(0..10) -> ok|{error, any()}.
-wait_valid(X) ->
-    wait_valid(X,X).
-
--spec wait_valid(0..10, 0..10) -> ok|{error, any()}.
-wait_valid(0,_) ->
+-spec wait_valid(fsm_ref(), 0..10, 0..10) -> ok|{error, any()}.
+wait_valid(_FSM, 0, _) ->
     {error, timeout};
-wait_valid(Cnt,Max) ->
-    case gen_fsm:sync_send_event({global, ?MODULE}, check, 15000) of
+wait_valid(FSM, Cnt, Max) ->
+    case gen_fsm:sync_send_event(FSM, check, 15000) of
         {valid  , _}   -> ok;
         {pending, _}   ->
             timer:sleep(500*(Max-Cnt+1)),
-            wait_valid(Cnt-1,Max);
+            wait_valid(FSM, Cnt-1,Max);
         {_      , Err} -> {error, Err}
     end.
 
 -spec get_challenge() -> error|map().
 get_challenge() ->
-    case catch gen_fsm:sync_send_event({global, ?MODULE}, get_challenge) of
+    get_challenge(?DEFAULT_FSM).
+
+-spec get_challenge(fsm_ref()) -> error|map().
+get_challenge(FSM) ->
+    case catch gen_fsm:sync_send_event(FSM, get_challenge) of
         % process not started, wrong state, ...
         {'EXIT', _Exc} ->
             %io:format("exc: ~p~n", [Exc]),
@@ -248,16 +266,32 @@ idle({create, Domain, Opts}, _, State=#state{key=Key, jws=JWS, acme_srv={_,_,_,B
 
     Nonce2    = letsencrypt_api:new_reg(Conn, BasePath, Key, JWS#{nonce => Nonce}),
     AuthzResp = authz([Domain|SANs], ChallengeType, State#state{conn=Conn, nonce=Nonce2}),
-    {StateName, Reply, Nonce5, NChallenges} = case AuthzResp of
-            {error, Err, Nonce3} ->
-                {idle, {error, Err}, Nonce3, undefined};
-
-            {ok, Challenges, Nonce4} ->
-                {pending, ok, Nonce4, Challenges}
-    end,
-
-    {reply, Reply, StateName, 
-     State#state{conn=Conn, domain=Domain, nonce=Nonce5, challenge=NChallenges, sans=SANs}}.
+    case AuthzResp of
+        {error, Err, Nonce3} ->
+            State1 = State#state{
+                conn=Conn,
+                domain=Domain,
+                sans=SANs,
+                nonce=Nonce3,
+                challenge=undefined
+            },
+            {reply, {error, Err}, idle, State1};
+        {ok, Challenges, Nonce4} ->
+            State1 = State#state{
+                conn=Conn,
+                domain=Domain,
+                sans=SANs,
+                nonce=Nonce4,
+                challenge=Challenges
+            },
+            Cs1 = [ C || {_Hostname,C} <- maps:to_list(Challenges)],
+            case lists:all(fun(C) -> maps:get(status, C) =:= <<"valid">> end, Cs1) of
+                true ->
+                    {reply, ok, valid, State1};
+                false ->
+                    {reply, ok, pending, State1}
+            end
+    end.
 
 
 pending(get_challenge, _, State=#state{challenge=Challenge}) ->
@@ -284,7 +318,8 @@ pending(_Action, _, State=#state{challenge=Challenges}) ->
     %io:format(":: challenge state -> ~p~n", [Reply]),
     {reply, Reply, StateName, State#state{conn=Conn}}.
 
-
+valid(check, _, State) ->
+    {reply, {valid, undefined}, valid, State};
 valid(_, _, State=#state{mode=Mode, domain=Domain, sans=SANs, cert_path=CertPath, key=Key, jws=JWS,
                              acme_srv={_,_,_,BasePath}, intermediate_cert=IntermediateCert}) ->
 
@@ -356,9 +391,7 @@ authz(Domains=[Domain|_], ChallengeType, State=#state{mode=Mode}) ->
             {error, Err, Nonce};
 
         {ok, Challenges, Nonce2} ->
-            %io:format("challenges: ~p ~p~n", [Challenges, Domain]),
             challenge_init(Mode, State#state{domain=Domain}, ChallengeType, Challenges),
-
             case authz_step2(maps:to_list(Challenges), State#state{nonce=Nonce2}) of
                 {ok, Nonce3} ->
                     {ok, Challenges, Nonce3};
@@ -394,8 +427,11 @@ authz_step1([Domain|T], ChallengeType,
 -spec authz_step2(list(binary()), state()) -> {ok, nonce()} | {error, binary(), nonce()}.
 authz_step2([], #state{nonce=Nonce}) ->
     {ok, Nonce};
-authz_step2([{_Domain, Challenge}|T], State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
-                                                         acme_srv={Proto,AcmeDomain,AcmePort,_}}) ->
+authz_step2([{_Domain, #{status := <<"valid">>}}|T], State) ->
+    authz_step2(T, State);
+authz_step2([{_Domain, #{status := <<"pending">>} = Challenge}|T], 
+            State=#state{conn=Conn, nonce=Nonce, key=Key, jws=JWS,
+                         acme_srv={Proto,AcmeDomain,AcmePort,_}}) ->
 
     #{uri := CUri, thumbprint := Thumbprint} = Challenge,
     % NOTE: we assume we are on same server than acme_srv, so we reuse Conn
@@ -408,7 +444,9 @@ authz_step2([{_Domain, Challenge}|T], State=#state{conn=Conn, nonce=Nonce, key=K
 
         _ ->
             {error, <<"invalid ", CUri/binary, " challenge uri">>, Nonce}
-    end.
+    end;
+authz_step2([{Domain, #{status := Other}}|_], #state{nonce=Nonce}) ->
+    {error, <<"unknown status ", Other/binary, " for ", Domain/binary>>, Nonce}.
 
 
 -spec challenge_init(mode(), state(), challenge_type(), map()) -> ok.
@@ -468,5 +506,3 @@ challenge_destroy(standalone, _) ->
     ok;
 challenge_destroy(slave, _) ->
 	ok.
-
-

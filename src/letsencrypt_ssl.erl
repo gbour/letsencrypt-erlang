@@ -27,9 +27,13 @@ private_key(undefined, CertsPath) ->
 
 private_key({new, KeyFile}, CertsPath) ->
     FileName = CertsPath++"/"++KeyFile,
-    Cmd = "openssl genrsa -out '"++FileName++"' 2048",
-    _R = os:cmd(Cmd),
-
+    case filelib:is_file(FileName) of
+        true ->
+            ok;
+        false ->
+            Cmd = "openssl genrsa -out '"++FileName++"' 2048",
+            _R = os:cmd(Cmd)
+    end,
     private_key(FileName, CertsPath);
 
 private_key(KeyFile, _) ->
@@ -72,31 +76,37 @@ cert_autosigned(Domain, KeyFile, SANs) ->
 -spec mkcert(request|autosigned, string(), string(), string(), list(string())) -> {ok, string()}.
 mkcert(request, Domain, OutName, Keyfile, []) ->
 %    CertFile = CertsPath++"/"++Domain++".csr",
-    Cmd = io_lib:format("openssl req -new -key '~s' -subj '/CN=~s' -out '~s'", [Keyfile, Domain, OutName]),
+    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -subj '/CN=~s' -out '~s'", [Keyfile, Domain, OutName]),
     _R  = os:cmd(Cmd),
     %io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _R]),
 
     {ok, OutName};
 mkcert(Type, Domain, OutName, Keyfile, SANs) ->
     %io:format("USE SANS~n"),
-    <<$,, SANEntry/binary>> = lists:foldl(fun(X, Acc) -> <<Acc/binary, ",DNS:", X/binary>> end, <<>>, SANs),
-
-    {ok, File} = file:read_file("/etc/ssl/openssl.cnf"),
-    File2 = <<File/binary, "\n[SAN]\nsubjectAltName=DNS:", (bin(Domain))/binary,$,, SANEntry/binary>>,
-    ConfFile = <<"/tmp/letsencrypt_san_openssl.cnf">>,
-    file:write_file(ConfFile, File2),
-
-    Cmd = io_lib:format(
-        "openssl req -new -key '~s' -out '~s' -subj '/CN=~s' -config '~s'", 
-        [Keyfile, OutName, Domain, ConfFile]),
+    Names = [ Domain | SANs ],
+    NamesNr = lists:zip(Names, lists:seq(1,length(Names))),
+    Cnf = [
+        "[req]\n",
+        "distinguished_name = req_distinguished_name\n",
+        "x509_extensions = v3_req\n",
+        "prompt = no\n",
+        "[req_distinguished_name]\n",
+        "CN = ", Domain, "\n",
+        "[v3_req]\n",
+        "subjectAltName = @alt_names\n",
+        "[alt_names]\n"
+    ] ++ [
+        [ "DNS.", integer_to_list(Nr), " = ", Name, "\n" ] || {Name, Nr} <- NamesNr
+    ],
+    ConfFile = <<"/tmp/letsencrypt_san_openssl.",(iolist_to_binary(Domain))/binary ,".cnf">>,
+    ok = file:write_file(ConfFile, Cnf),
+    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -out '~s' -subj '/CN=~s' -config '~s'", 
+                        [Keyfile, OutName, Domain, ConfFile]),
     Cmd1 = case Type of
-        request    -> [Cmd | " -reqexts SAN" ];
-        autosigned -> [Cmd | " -extensions SAN -x509 -sha256 -days 1" ]
+        request    -> [Cmd | " -reqexts v3_req" ];
+        autosigned -> [Cmd | " -extensions v3_req -x509 -days 1" ]
     end,
-
-    _Status  = os:cmd(Cmd1),
-    %io:format("mkcert(~p): ~p => ~p~n", [Type, lists:flatten(Cmd1), _Status]),
-
+    _Status = os:cmd(Cmd1),
     file:delete(ConfFile),
     {ok, OutName}.
 
