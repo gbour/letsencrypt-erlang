@@ -7,9 +7,9 @@
 
 
 handle(Req, _Args) ->
-    {Path, _} = elli_request:raw_path(Req),
+    Path = elli_request:raw_path(Req),
     File = <<"/tmp", Path/binary>>,
-    io:format("reading ~p~n", [File]),
+    ct:pal(info, "webroot_handler: reading ~p file", [File]),
 
     case file:read_file(File) of
         {ok, Content} ->

@@ -21,17 +21,20 @@
 
 handle(Req, _Args) ->
     %io:format("Elli: ~p~n~p~n", [Req, _Args]),
-    handle(elli_request:method(Req), elli_request:path(Req), elli_request:get_header(<<"Host">>, Req)).
+    handle(elli_request:method(Req), elli_request:path(Req), Req).
 
 
-handle('GET', [<<".well-known">>, <<"acme-challenge">>, Token], Host) ->
-    %io:format("ELLI: host= ~p~n", [Host]),
+handle('GET', [<<".well-known">>, <<"acme-challenge">>, Token], Req) ->
+    %NOTE: when testing on travis with local boulder instance, Host header may contain port number
+    %      I dunno if it can happens againts production boulder, but this line filters it out
+    [Host|_]   = binary:split(elli_request:get_header(<<"Host">>, Req, <<>>), <<":">>),
     Challenges = letsencrypt:get_challenge(),
+    %io:format("ELLI: host= ~p, challenges= ~p~n", [Host, Challenges]),
 
     case maps:get(Host, Challenges, undefined) of
         #{token := Token, thumbprint := Thumbprint} ->
             %io:format("match: ~p -> ~p~n", [Token, Thumbprint]),
-             {200, [{<<"Content-Type">>, <<"text/plain">>}], Thumbprint};
+            {200, [{<<"Content-Type">>, <<"text/plain">>}], Thumbprint};
 
         _X     ->
             %io:format("nomatch: ~p -> ~p~n", [Token, _X]),
