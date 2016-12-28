@@ -14,6 +14,7 @@ Features:
 - [ ] allow EC keys
 - [ ] choose RSA key length
 - [x] unittests
+- [x] hex package
 
 Modes
 - [x] webroot

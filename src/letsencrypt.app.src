@@ -1,6 +1,6 @@
 {application, 'letsencrypt',
  [{description, "A letsencrypt.org client library for Erlang"},
-  {vsn, "0.6.0"},
+  {vsn, "0.7.0"},
   {registered, []},
   {applications,
    [kernel,
