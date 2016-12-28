@@ -424,19 +424,14 @@ challenge_init(slave, _, _, _) ->
     ok;
 challenge_init(standalone, #state{domain=Domain, port=Port, key=#{file := KeyFile}}, ChallengeType,
                Challenges) ->
-	% be sure handler is not already running
-	cowboy:stop_listener(letsencrypt_cowboy_listener),
-
-    Dispatch = cowboy_router:compile([
-        {'_', [{<<?WEBROOT_CHALLENGE_PATH/binary, "/:token">>, letsencrypt_cowboy_handler, []}]}
-    ]),
-
+    %io:format("challenge type: ~p~n", [ChallengeType]),
     {ok, _} = case ChallengeType of
         'http-01' ->
-            cowboy:start_http(letsencrypt_cowboy_listener, 1,
-                [{port, Port}],
-                [{env, [{dispatch, Dispatch}]}]
-            );
+            elli:start_link([
+                {name    , {local, letsencrypt_elli_listener}},
+                {callback, letsencrypt_elli_handler},
+                {port    , Port}
+            ]);
 
         'tls-sni-01' ->
             SANs = lists:map(fun(#{thumbprint := KeyAuth}) ->
@@ -449,14 +444,13 @@ challenge_init(standalone, #state{domain=Domain, port=Port, key=#{file := KeyFil
 
             {ok, CertFile} = letsencrypt_ssl:cert_autosigned(str(Domain), KeyFile, SANs),
 
-            cowboy:start_https(letsencrypt_cowboy_listener, 1,
-                [
-                       {port    , Port},
-                       {certfile, CertFile},
-                       {keyfile , KeyFile}
-                ],
-                [{env, [{dispatch, Dispatch}]}]
-            )
+            elli:start_link([ssl,
+                {name    , {local, letsencrypt_elli_listener}},
+                {callback, letsencrypt_elli_handler},
+                {port    , Port},
+                {certfile, CertFile},
+                {keyfile , KeyFile}
+            ])
     end,
 
     ok.
@@ -470,7 +464,7 @@ challenge_destroy(webroot, #state{webroot_path=WPath, challenge=Challenges}) ->
     ok;
 challenge_destroy(standalone, _) ->
 	% stop http server
-	cowboy:stop_listener(letsencrypt_cowboy_listener),
+    elli:stop(letsencrypt_elli_listener),
     ok;
 challenge_destroy(slave, _) ->
 	ok.
