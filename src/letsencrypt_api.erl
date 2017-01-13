@@ -20,6 +20,8 @@
 
 -import(letsencrypt_utils, [bin/1]).
 
+% RFC7807 Problem Report type
+-record(problem, {type=none,instance=none,info=[]}).
 
 -ifdef(TEST).
     -define(AGREEMENT_URL  , <<"http://boulder:4000/terms/v1">>).
@@ -147,8 +149,8 @@ challenge(status, Conn, Path) ->
     Payload = #{<<"status">> := Status} = jiffy:decode(Body, [return_maps]),
     case status(Status) of
         invalid ->
-            #{<<"detail">> := Err} = maps:get(<<"error">>, Payload, #{<<"detail">> => uncatched}),
-            {invalid, Err};
+            Err = maps:get(<<"error">>, Payload, #{<<"detail">> => uncatched}),
+            {invalid, problem_report(Err)};
 
         unknown ->
             {invalid, unknown_state};
@@ -171,17 +173,28 @@ new_cert(Conn, Path, Key, Jws, Csr) ->
     {Body, Nonce}.
 
 
--spec post(pid(), string(), map(), binary()) -> {ok, letsencrypt:nonce(), binary()}.
+-spec post(pid(), string(), map(), binary()) -> {ok, letsencrypt:nonce(), binary()}|{error,term()}|#problem{}.
 post(Conn, Path, Headers, Content) ->
     ?debug("== POST ~p~n", [Path]),
     {ok, Resp} = shotgun:post(Conn, Path, Headers#{<<"Content-Type">> => <<"application/jose+json">>}, 
                               Content, #{}),
     ?debug("resp= ~p~n", [Resp]),
-    #{body := Body, headers := RHeaders, status_code := _Status} = Resp,
+    #{body := Body, headers := RHeaders, status_code := Status} = Resp,
 
-    Nonce = proplists:get_value(<<"replay-nonce">>, RHeaders),
-    {ok, Nonce, Body}.
+    RespContentType = case proplists:get_value(<<"content-type">>, RHeaders) of
+			  undefined -> undefined;
+			  T -> cow_http_hd:parse_content_type(T)
+		      end,
 
+    case {Status, RespContentType} of
+	{_, {<<"application">>, <<"problem+json">>, _}} ->
+	    problem_report(Status, Body);
+	{X, _} when X >= 400 ->
+	    {error, {http, X}};
+	_ ->
+	    Nonce = proplists:get_value(<<"replay-nonce">>, RHeaders),
+	    {ok, Nonce, Body}
+    end.
 
 -spec get_intermediate(letsencrypt:uri(), Opts::map()) -> {ok, binary()}.
 get_intermediate({Proto, Domain, Port, Path}, Opts) ->
@@ -190,7 +203,7 @@ get_intermediate({Proto, Domain, Port, Path}, Opts) ->
     shotgun:close(Conn),
 
     %io:format("resp= ~p~n", [Resp]),
-    #{body := Body} = Resp,
+    #{body := Body, status_code := 200} = Resp,
     {ok, Body}.
 
 -spec status(binary()) -> atom().
@@ -203,3 +216,49 @@ status(_Status)       ->
     io:format("unknown status: ~p~n", [_Status]),
     unknown.
 
+-spec problem_report(integer(), binary()) -> #problem{}.
+problem_report(Status, JsonBin) ->
+    {Kvs} = jiffy:decode(JsonBin),
+    lists:foldl(fun({K,V},P) -> assort_problem(K,V,P) end,
+		#problem{info=[{status,Status}]}, Kvs).
+-spec problem_report(map()) -> #problem{}.
+problem_report(JsonMap) ->
+    maps:fold(fun assort_problem/3, #problem{}, JsonMap).
+
+-spec assort_problem(binary(),term(),#problem{}) -> #problem{}.
+assort_problem(<<"type">>, T, Prob)     -> Prob#problem{type=problem_type(T)};
+assort_problem(<<"instance">>, T, Prob) -> Prob#problem{instance=T};
+assort_problem(K, V, Prob) ->
+    InfoKey = case K of
+		  <<"title">> -> title;
+		  <<"detail">> -> detail;
+		  <<"status">> -> status;
+		  Other -> Other
+	      end,
+    Prob#problem{info=[{InfoKey,V}|Prob#problem.info]}.
+
+-spec problem_type(binary()) -> binary() | {atom(),atom()}.
+problem_type(<<"urn:ietf:params:acme:error:", X/binary>>) ->
+    {acme,
+     case X of
+	 <<"badCSR">> -> badCSR;
+	 <<"badNonce">> -> badNonce;
+	 <<"badSignatureAlgorithm">> -> badSignatureAlgorithm;
+	 <<"caa">> -> caa;
+	 <<"connection">> -> connection;
+	 <<"dnssec">> -> dnssec;
+	 <<"invalidContact">> -> invalidContact;
+	 <<"malformed">> -> malformed;
+	 <<"rateLimited">> -> rateLimited;
+	 <<"rejectedIdentifier">> -> rejectedIdentifier;
+	 <<"serverInternal">> -> serverInternal;
+	 <<"tls">> -> tls;
+	 <<"unauthorized">> -> unauthorized;
+	 <<"unknownHost">> -> unknownHost;
+	 <<"unsupportedIdentifier">> -> unsupportedIdentifier;
+	 <<"userActionRequired">> -> userActionRequired;
+	 _ -> X
+     end
+    };
+problem_type(<<"urn:acme:error:", X/binary>>) -> problem_type(<<"urn:ietf:params:acme:error:", X/binary>>);
+problem_type(X) -> X.
