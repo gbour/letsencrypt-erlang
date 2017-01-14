@@ -248,6 +248,7 @@ problem_type(<<"urn:ietf:params:acme:error:", X/binary>>) ->
 	 <<"connection">> -> connection;
 	 <<"dnssec">> -> dnssec;
 	 <<"invalidContact">> -> invalidContact;
+	 <<"invalidEmail">> -> invalidContact; % Boulder-specific difference
 	 <<"malformed">> -> malformed;
 	 <<"rateLimited">> -> rateLimited;
 	 <<"rejectedIdentifier">> -> rejectedIdentifier;
