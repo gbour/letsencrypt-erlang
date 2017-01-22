@@ -27,7 +27,7 @@ main(Args) ->
     OptsSpecList = options_spec_list(),
     {ok, {Opts, Args2}} = getopt:parse(OptsSpecList, Args),
 
-    case parse_opts(Opts, #{short => false, force => false}) of
+    case parse_opts(Opts, #{action => list, short => false, force => false}) of
         help -> main([]);
         Ctx  ->
             #{conf := #{"domains" := Doms}} = Ctx,
