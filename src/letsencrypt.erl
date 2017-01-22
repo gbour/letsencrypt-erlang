@@ -67,7 +67,10 @@
     key   = undefined               :: undefined | ssl_privatekey(),
     jws   = undefined               :: undefined | jws(),
 
-    challenge = undefined           :: undefined | map()
+    challenge = undefined           :: undefined | map(),
+
+    % network connection opts
+    connect_opts = #{timeout => 30000} :: map()
 }).
 
 -type state() :: #state{}.
@@ -100,7 +103,8 @@ init(Args) ->
     Jws = letsencrypt_jws:init(Key),
 
     {ok, {IProto, _, IHost, IPort, IPath, _}} = http_uri:parse(?INTERMEDIATE_CERT_URL),
-    {ok, IntermediateCert} = letsencrypt_api:get_intermediate({IProto, IHost, IPort, IPath}),
+    {ok, IntermediateCert} = letsencrypt_api:get_intermediate({IProto, IHost, IPort, IPath},
+                                                              State2#state.connect_opts),
 
     {ok, idle, State2#state{acme_srv=AcmeSrv, key=Key, jws=Jws, intermediate_cert=IntermediateCert}}.
 
@@ -143,6 +147,11 @@ getopts([{cert_path, Path}|Args], State) ->
         Args,
         State#state{cert_path = Path}
     );
+getopts([{connect_timeout, Timeout}|Args], State) ->
+    getopts(
+        Args,
+        State#state{connect_opts = #{timeout => Timeout}}
+     );
 getopts([Unk|_], _) ->
     io:format("unknow parameter: ~p~n", [Unk]),
     %throw({badarg, io_lib:format("unknown ~p parameter", [Unk])}).
@@ -326,8 +335,8 @@ code_change(_, StateName, State, _) ->
 %%
 
 -spec get_conn(state()) -> pid().
-get_conn(#state{conn=undefined, acme_srv=AcmeSrv}) ->
-    letsencrypt_api:connect(AcmeSrv);
+get_conn(#state{conn=undefined, acme_srv=AcmeSrv, connect_opts=Opts}) ->
+    letsencrypt_api:connect(AcmeSrv, Opts);
 get_conn(#state{conn=Conn}) ->
     Conn.
 
@@ -415,19 +424,14 @@ challenge_init(slave, _, _, _) ->
     ok;
 challenge_init(standalone, #state{domain=Domain, port=Port, key=#{file := KeyFile}}, ChallengeType,
                Challenges) ->
-	% be sure handler is not already running
-	cowboy:stop_listener(letsencrypt_cowboy_listener),
-
-    Dispatch = cowboy_router:compile([
-        {'_', [{<<?WEBROOT_CHALLENGE_PATH/binary, "/:token">>, letsencrypt_cowboy_handler, []}]}
-    ]),
-
+    %io:format("challenge type: ~p~n", [ChallengeType]),
     {ok, _} = case ChallengeType of
         'http-01' ->
-            cowboy:start_http(letsencrypt_cowboy_listener, 1,
-                [{port, Port}],
-                [{env, [{dispatch, Dispatch}]}]
-            );
+            elli:start_link([
+                {name    , {local, letsencrypt_elli_listener}},
+                {callback, letsencrypt_elli_handler},
+                {port    , Port}
+            ]);
 
         'tls-sni-01' ->
             SANs = lists:map(fun(#{thumbprint := KeyAuth}) ->
@@ -440,14 +444,13 @@ challenge_init(standalone, #state{domain=Domain, port=Port, key=#{file := KeyFil
 
             {ok, CertFile} = letsencrypt_ssl:cert_autosigned(str(Domain), KeyFile, SANs),
 
-            cowboy:start_https(letsencrypt_cowboy_listener, 1,
-                [
-                       {port    , Port},
-                       {certfile, CertFile},
-                       {keyfile , KeyFile}
-                ],
-                [{env, [{dispatch, Dispatch}]}]
-            )
+            elli:start_link([ssl,
+                {name    , {local, letsencrypt_elli_listener}},
+                {callback, letsencrypt_elli_handler},
+                {port    , Port},
+                {certfile, CertFile},
+                {keyfile , KeyFile}
+            ])
     end,
 
     ok.
@@ -461,7 +464,7 @@ challenge_destroy(webroot, #state{webroot_path=WPath, challenge=Challenges}) ->
     ok;
 challenge_destroy(standalone, _) ->
 	% stop http server
-	cowboy:stop_listener(letsencrypt_cowboy_listener),
+    elli:stop(letsencrypt_elli_listener),
     ok;
 challenge_destroy(slave, _) ->
 	ok.

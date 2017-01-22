@@ -1,0 +1,20 @@
+{application, 'letsencrypt',
+ [{description, "A letsencrypt.org client library for Erlang"},
+  {vsn, "0.7.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib,
+    shotgun,
+    jiffy,
+    elli
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, ["Guillaume Bour"]},
+  {licenses, ["Apache 2.0"]},
+  {links, [{"GitHub", "https://github.com/gbour/letsencrypt-erlang"}]},
+  {build_tools, ["rebar"]}
+ ]}.
+
