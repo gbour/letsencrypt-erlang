@@ -15,6 +15,9 @@
   {maintainers, ["Guillaume Bour"]},
   {licenses, ["Apache 2.0"]},
   {links, [{"GitHub", "https://github.com/gbour/letsencrypt-erlang"}]},
-  {build_tools, ["rebar"]}
+  {build_tools, ["rebar"]},
+
+  % include escript & configuration into hex package
+  {include_files, ["bin/eletsencrypt", "etc/eletsencrypt.yml"]}
  ]}.
 
