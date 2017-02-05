@@ -1,0 +1,23 @@
+
+general:
+    # in days
+    renew_threshold: 5
+
+domains:
+    my.domain.tld:
+        - path: /path/to/certificate
+          mode: standalone
+          # either http-01 or tls-sni-01
+          challenge: http-01
+          # issue certificate on LE staging platform (default is false)
+          staging: true
+          port: 8000
+
+    other.domain:
+        - path: /path/to/certificate
+          mode: webroot
+          webroot: /path/to/webroot
+          on_success:
+              - engine: systemd
+                unit: nginx
+

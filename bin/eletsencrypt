@@ -1,0 +1,338 @@
+#!/usr/bin/env escript
+%% vim: filetype=erlang
+
+%% Copyright 2015-2016 Guillaume Bour
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%% http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
+
+-include_lib("public_key/include/public_key.hrl").
+
+main([]) ->
+    include_libs(),
+    getopt:usage(options_spec_list(), escript:script_name(), "[domain]");
+main(Args) ->
+    include_libs(),
+    start([letsencrypt, yamerl, qdate]),
+
+    OptsSpecList = options_spec_list(),
+    {ok, {Opts, Args2}} = getopt:parse(OptsSpecList, Args),
+
+    case parse_opts(Opts, #{action => list, short => false, force => false}) of
+        help -> main([]);
+        Ctx  ->
+            #{conf := #{"domains" := Doms}} = Ctx,
+
+            Selection = case Args2 of
+                [] -> maps:to_list(Doms);
+
+                S2 -> lists:filtermap(fun(D) ->
+                    case maps:get(D, Doms, undefined) of
+                        undefined -> false;
+                        V         -> {true, {D, V}}
+                    end end, S2)
+            end,
+
+            %io:format("~p~n~p~n----~n", [Selection, Ctx]),
+            do(lists:sort(Selection), Ctx)
+    end,
+
+    ok.
+
+start([]) ->
+    ok;
+start([App|T]) ->
+    application:ensure_all_started(App),
+    start(T).
+
+parse_opts([], Ctx) ->
+    Ctx;
+parse_opts([list|T], Ctx) ->
+    parse_opts(T, Ctx#{action => list});
+parse_opts([renew|T], Ctx) ->
+    parse_opts(T, Ctx#{action => renew});
+parse_opts([short|T], Ctx) ->
+    parse_opts(T, Ctx#{short => true});
+parse_opts([force|T], Ctx) ->
+    parse_opts(T, Ctx#{force => true});
+parse_opts([{config, File}|T], Ctx) ->
+    [Conf] = yamerl_constr:file(File),
+    Conf2 = parse_conf(Conf, #{}),
+    parse_opts(T, Ctx#{conf => Conf2});
+parse_opts([help|_], _) ->
+    help;
+parse_opts([_H|T], Ctx) ->
+    parse_opts(T, Ctx).
+
+
+parse_conf([], Ctx) ->
+    Ctx;
+parse_conf([{Name, Vals}|T], Ctx) ->
+    parse_conf(T, Ctx#{Name => maps:from_list(Vals)});
+parse_conf([_|T], Ctx) ->
+    parse_conf(T, Ctx).
+
+
+do([], _) ->
+    io:format("  no domain found~n");
+do(Domains, #{action := list, short := Short, conf := #{"general" := General}}) ->
+    list(Domains, General#{short => Short});
+do(Domains, #{action := renew, force := Force, conf := #{"general" := General}}) ->
+    renew(Domains, General#{force => Force}).
+   
+list([], _) ->
+    ok;
+list([{Domain, [Opts]}|T], Conf=#{short := false, "renew_threshold" := Threshold}) ->
+    io:format("~n----~ndomain ~s~n", [color:on_white(color:black(Domain))]),
+    File = proplists:get_value("path", Opts) ++ "/" ++ Domain ++ ".crt",
+
+    case get_certificate_infos(File) of
+        {ok, #{subject := Subject, diff := DiffDays, issuer := Issuer, start := Start, 'end' := End,
+               altnames := AltNames}} -> 
+
+            case Subject of
+                Domain -> pass;
+                Fail   -> io:format("  ~s~n", [
+                    color:red(io_lib:format("[Certificate subject (~p) do not match file name]", [Fail]))])
+            end,
+
+            Msg = if DiffDays < 0 ->
+                    color:red(io_lib:format("[Certificate is expired since ~p days]", [-DiffDays]));
+                DiffDays < Threshold -> 
+                    color:orange(io_lib:format("[Certificate will expire in ~p days]", [DiffDays]));
+                true ->
+                    color:green(io_lib:format("[Certificate will expire in ~p days]", [DiffDays]))
+            end,
+            io:format("  ~s~n", [Msg]),
+
+            case list_to_binary(Issuer) of
+                <<"Fake LE", _/binary>> ->
+                    io:format("  ~s~n", [color:rgb([5,3,0], "[Certificate is issued on staging]")]);
+                <<"Let's Encrypt Authority", _/binary>> -> pass;
+                _ -> 
+                    io:format("  ~s~n", [color:red("[Certificate is not issued by Let's Encrypt authority]")])
+            end,
+
+            % general informations
+            io:format("~n  . issuer     : ~p~n" ++
+                      "  . created on : ~p~n" ++
+                      "  . expire  on : ~p~n",
+                [Issuer,
+                 qdate:to_string("Y-m-d H:i T", Start),
+                 qdate:to_string("Y-m-d H:i T", End)
+                ]
+            ),
+
+            % alt names
+            case AltNames of
+                undefined -> pass;
+                AltNames  -> io:format("  . alt names  : ~p~n", [AltNames])
+            end,
+
+            ok;
+
+        {error, Err} -> 
+            io:format("  ~s~n", 
+                      [color:red(io_lib:format("[Cannot read ~p certificate file (reason=~p)]", [File, Err]))])
+    end,
+
+    list(T, Conf);
+
+list([{Domain, [Opts]}|T], Conf=#{short := true, "renew_threshold" := Threshold}) ->
+    io:format(" * ~s~s", [color:on_white(color:black(Domain)), [" "||_ <- lists:seq(1,40-string:len(Domain))]]),
+    File = proplists:get_value("path", Opts) ++ "/" ++ Domain ++ ".crt",
+
+    case get_certificate_infos(File) of
+        {ok, #{diff := DiffDays, issuer := Issuer}} -> 
+
+            Status = if DiffDays < 0 -> color:red("E");
+                DiffDays < Threshold -> color:orange("N");
+                true                 -> color:green("V")
+            end,
+            Issued = case list_to_binary(Issuer) of
+                <<"Fake LE", _/binary>>                 -> color:rgb([5,3,0], "S");
+                <<"Let's Encrypt Authority", _/binary>> -> color:green("P");
+                _                                       -> color:red("X") 
+            end,
+
+            io:format("[~s~s]~n", [Status, Issued]);
+
+        {error, _Err} -> 
+            io:format("[~s_]~n", [color:red("X")])
+    end,
+
+    list(T, Conf).
+
+
+renew([], _) ->
+    ok;
+renew([{Domain, [Opts]} | T], Conf=#{force := Force, "renew_threshold" := Threshold}) ->
+    io:format(" * ~s~s", [color:on_white(color:black(Domain)), [" "||_ <- lists:seq(1,40-string:len(Domain))]]),
+
+    File = proplists:get_value("path", Opts) ++ "/" ++ Domain ++ ".crt",
+    Resp = case get_certificate_infos(File) of
+        % certificate file does not exit, we can create it
+        {error, enoent} -> create_certificate(File, Domain, Opts);
+
+        {ok, #{diff := DiffDays}} ->
+            if DiffDays >= Threshold andalso Force =/= true ->
+                    io:format("expiration is greater than threshold. Use -f option to force renew~n"),
+                    {error, not_expired};
+                true ->
+                    create_certificate(File, Domain, Opts)
+            end;
+
+        {error, _Err} ->
+            io:format("[~s_]~n", [_Err])
+    end,
+
+    case Resp of
+        {ok, _Paths} ->
+            io:format("renewed~n"),
+            [Action] = proplists:get_value("on_success", Opts, []),
+            on_success(maps:from_list(Action));
+
+        {error, not_expired} -> pass;
+
+        {error, Err} ->
+            io:format("fail to renew (err=~p)~n", [Err])
+    end,
+    renew(T, Conf).
+
+create_certificate(_File, Domain, Opts) ->
+    Staging   = proplists:get_value("staging", Opts, false),
+    Path      = proplists:get_value("path", Opts),
+    Mode      = list_to_atom(proplists:get_value("mode", Opts)),
+    Challenge = list_to_atom(proplists:get_value("challenge", Opts, "http-01")),
+
+    LOpts = case Mode of
+        standalone ->
+            Port = proplists:get_value("port", Opts),
+
+            [{mode, Mode},{port,Port},{cert_path, Path}];
+
+        webroot    ->
+            Webroot = proplists:get_value("webroot", Opts),
+            [{mode, Mode},{cert_path, Path},{webroot_path, Webroot}]
+    end,
+
+    %io:format("creating ~p (~p,~p,~p)~n", [File, Mode, Path, Port]),
+    LOpts2 = if Staging -> [staging|LOpts]; true -> LOpts end,
+    {ok, _Pid} = letsencrypt:start(LOpts2),
+    Resp = letsencrypt:make_cert(list_to_binary(Domain), #{challenge => Challenge, async => false}),
+    letsencrypt:stop(),
+
+    Resp.
+
+
+on_success(#{"engine" := "systemd", "unit" := Unit}) ->
+    Cmd = "systemctl reload '"++Unit++"'",
+
+    Out = os:cmd(Cmd),
+    io:format("~p~n", [Out]);
+on_success(_) ->
+    % ignored
+    ok.
+
+
+options_spec_list() ->
+    [
+        {help  , $h, "help"  , undefined, undefined},
+        {list  , $l, "list"  , undefined, "list certificate(s) w/ informations"},
+        {short , $s, "short" , undefined, "short form list"},
+        {renew , $r, "renew" , undefined, "create/renew certificate(s)"},
+        {force , $f, "force" , undefined, "force renewal event if certificate not expired"},
+        {config, $c, "config", {string, "etc/eletsencrypt.yml"}, "eletsencrypt configuration file"} 
+    ].
+
+include_libs() ->
+    BaseDir = filename:dirname(escript:script_name()),
+    [ code:add_pathz(Path) || Path <- filelib:wildcard(BaseDir++"/../_build/default/lib/*/ebin") ],
+
+    ok.
+
+
+%%
+%% CERTIFICATE FUNS
+%%
+
+rdnSeq({rdnSequence, Seq}, Match) ->
+    rdnSeq(Seq, Match);
+rdnSeq([[{'AttributeTypeAndValue', Match, Result}]|_], Match) ->
+    str(Result);
+rdnSeq([_|T], Match) ->
+    rdnSeq(T, Match);
+rdnSeq([], _) ->
+    undefined.
+
+exten(asn1_NOVALUE, _) ->
+    undefined;
+exten([], _) ->
+    undefined;
+exten([#'Extension'{extnID = Match, extnValue = Values}|_], Match) ->
+    [ str(DNS) || DNS <- Values];
+exten([_|T], Match) ->
+    exten(T, Match).
+
+str({printableString, Str}) ->
+    Str;
+str({utf8String, Str}) ->
+	erlang:binary_to_list(Str);
+str({dNSName, Str}) ->
+    Str.
+
+to_date({utcTime, Date}) ->
+    case re:run(Date, "(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})(\\d{2})Z",[{capture,all_but_first,list}]) of
+        {match, Matches} ->
+            [Y,M,D,H,Mm,S] = lists:map(fun(X) -> erlang:list_to_integer(X) end, Matches),
+            {{2000+Y, M, D}, {H, Mm, S}};
+
+        _ -> error
+    end.
+
+get_certificate_infos(File) ->
+    case file:read_file(File) of
+        {error, Err} -> {error, Err};
+        {ok, Pem}    -> 
+            [{'Certificate',Cert,_}|_] = public_key:pem_decode(Pem),
+
+            #'OTPCertificate'{tbsCertificate = #'OTPTBSCertificate'{
+                issuer     = Issuer,
+                validity   = #'Validity'{notBefore = Start, notAfter= End},
+                subject    = _Subject,
+                extensions = Exts
+            }} = public_key:pkix_decode_cert(Cert, otp),
+
+            % days before expiration
+            {DiffDays, {_DiffHours,_,_}}    = calendar:seconds_to_daystime(
+                calendar:datetime_to_gregorian_seconds(to_date(End))-
+                calendar:datetime_to_gregorian_seconds(calendar:universal_time())
+            ),
+
+
+            Subject  = rdnSeq(_Subject, ?'id-at-commonName'),
+            AltNames = case exten(Exts, ?'id-ce-subjectAltName') of
+                undefined -> undefined;
+                [Subject] -> undefined;
+                Alts      -> lists:delete(Subject, Alts)
+            end,
+
+            {ok, #{
+               subject  => Subject, 
+               issuer   => rdnSeq(Issuer, ?'id-at-commonName'),
+               start    => to_date(Start),
+               'end'    => to_date(End), 
+               diff     => DiffDays,
+               altnames => AltNames
+            }}
+    end.
+
