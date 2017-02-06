@@ -22,7 +22,7 @@ main([]) ->
     getopt:usage(options_spec_list(), escript:script_name(), "[domain]");
 main(Args) ->
     include_libs(),
-    start([letsencrypt, yamerl, qdate]),
+    start([letsencrypt, yamerl]),
 
     OptsSpecList = options_spec_list(),
     {ok, {Opts, Args2}} = getopt:parse(OptsSpecList, Args),
@@ -124,11 +124,11 @@ list([{Domain, [Opts]}|T], Conf=#{short := false, "renew_threshold" := Threshold
 
             % general informations
             io:format("~n  . issuer     : ~p~n" ++
-                      "  . created on : ~p~n" ++
-                      "  . expire  on : ~p~n",
+                      "  . created on : ~s~n" ++
+                      "  . expire  on : ~s~n",
                 [Issuer,
-                 qdate:to_string("Y-m-d H:i T", Start),
-                 qdate:to_string("Y-m-d H:i T", End)
+                 date_to_string(Start),
+                 date_to_string(End)
                 ]
             ),
 
@@ -336,3 +336,7 @@ get_certificate_infos(File) ->
             }}
     end.
 
+date_to_string({{Year, Month, Day}, {Hour, Min, _}}) ->
+    io_lib:format("~B-~2..0B-~2..0B ~2..0B:~2..0B GMT", [Year, Month, Day, Hour, Min]);
+date_to_string(Date) ->
+    io_lib:format("invalid date: ~p", [Date]).
