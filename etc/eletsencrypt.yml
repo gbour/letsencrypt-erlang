@@ -1,17 +1,32 @@
 
 general:
-    # in days
+    # in days. Certificates will be renewed when their expiration date will be less than 5 days in the
+    # future
     renew_threshold: 5
 
 domains:
+    # list your domains to manage
     my.domain.tld:
+          # path to store private key and certificate file. MUST exist and be writable
         - path: /path/to/certificate
+          # mode to renew certificate
+          # . standalone : eletsencrypt is starting his own webserver on *port* port
+          # . webroot    : you already have a running webserver
           mode: standalone
           # either http-01 or tls-sni-01
           challenge: http-01
           # issue certificate on LE staging platform (default is false)
           staging: true
+          # only with *standalone* mode. Port to listen certificate validation requests
           port: 8000
+          # only with *webroot* mode. Path to store certificate validation file
+          # webroot: /path/to/webroot
+          #
+          # once certificate is renewed, reload web server configuration
+          # currently only supports *systemd* engine
+          # on_success:
+          #     - engine: systemd
+          #       unit: nginx
 
     other.domain:
         - path: /path/to/certificate

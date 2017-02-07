@@ -69,6 +69,21 @@ Both **/path/to/webroot** and **/path/to/certs** MUST be writtable by the erlang
   So letsencrypt-erlang is writing challenge file under **/path/to/webroot** directory.
   Finally, keys and certificates are written in **/path/to/certs** directory.
 
+## Escript
+
+**bin/eletsencrypt** escript allows certificates management without any lines of Erlang.
+Configuration is defined in etc/eletsencrypt.yml
+
+Options:
+ * **-h|--help**: show help
+ * **-l|--list**: list certificates informations
+   * **-s|--short**: along with *-l*, display informations in short form
+ * **-r|--renew**: renew expired certificates
+ * **-f|--force**: along with *-r*, force certificates renewal even if not expired
+ * **-c|--config CONFIG-FILE**: use *CONFIG-FILE* configuration instead of default one
+
+Optionally, you can provide the domain you want to apply options as parameter
+
 
 ## API
 NOTE: if _optional_ is not written, parameter is required
