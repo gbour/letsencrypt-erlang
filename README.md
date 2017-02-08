@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/gbour/letsencrypt-erlang.svg?branch=master)](https://travis-ci.org/gbour/letsencrypt-erlang)
+[![Hex.pm](https://img.shields.io/hexpm/v/letsencrypt.svg)](https://hex.pm/packages/letsencrypt)
 
 # letsencrypt-erlang
 Let's Encrypt client library for Erlang
