@@ -151,6 +151,8 @@ challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
 -spec challenge(status, pid(), string()) -> {'ok'|'invalid', atom()|binary()}.
 challenge(status, Conn, Path) ->
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
+    ?debug("challenge(status, _, ~p) => ~p~n", [Path, Resp]),
+
     #{body := Body} = Resp,
     %io:format("challenge status: ~p~n", [Body]),
 
