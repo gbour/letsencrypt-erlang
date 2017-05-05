@@ -4,8 +4,8 @@ dist: trusty
 language: erlang
 
 otp_release:
-    - 19.0
-    - 18.2.1
+    # - 19.0
+    # - 18.2.1
     - 17.5
 
 services:
