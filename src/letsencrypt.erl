@@ -40,11 +40,13 @@
     -define(STAGING_API_URL      , "http://127.0.0.1:4000/acme").
     -define(DEFAULT_API_URL      , "").
     -define(INTERMEDIATE_CERT_URL, "http://127.0.0.1:3099/test/test-ca.pem").
+    -define(debug(Fmt, Args), io:format(Fmt, Args)).
 -else.
     -define(STAGING_API_URL      , "https://acme-staging.api.letsencrypt.org/acme").
     -define(DEFAULT_API_URL      , "https://acme-v01.api.letsencrypt.org/acme").
     %TODO: dynamically get xs certificate given the one used to sign the generated one
     -define(INTERMEDIATE_CERT_URL, "https://letsencrypt.org/certs/lets-encrypt-x3-cross-signed.pem").
+    -define(debug(Fmt, Args), ok).
 -endif.
 %-define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.0.1-July-27-2015.pdf">>).
 
@@ -200,6 +202,7 @@ make_cert_bg(FSM, Domain, Opts=#{async := Async}) ->
     Ret = case gen_fsm:sync_send_event(FSM, {create, bin(Domain), Opts}, 15000) of
         {error, Err} ->
             %io:format("error: ~p~n", [Err]),
+            ?debug("make_cert_bg sync_send_event error: ~p~n", [Err]),
             {error, Err};
         ok ->
             %io:format("ok: ~p~n", [Path]),
@@ -207,6 +210,7 @@ make_cert_bg(FSM, Domain, Opts=#{async := Async}) ->
                 ok ->
                     gen_fsm:sync_send_event(FSM, finalize, 15000);
                 Error ->
+                    ?debug("make_cert_bg wait_valid error: ~p~n", [Error]),
                     gen_fsm:send_all_state_event(FSM, reset),
                     Error
             end
@@ -222,14 +226,18 @@ make_cert_bg(FSM, Domain, Opts=#{async := Async}) ->
 
 -spec wait_valid(fsm_ref(), 0..10, 0..10) -> ok|{error, any()}.
 wait_valid(_FSM, 0, _) ->
+    ?debug("wait_valid timeout~n", [Err]),
     {error, timeout};
 wait_valid(FSM, Cnt, Max) ->
     case gen_fsm:sync_send_event(FSM, check, 15000) of
         {valid  , _}   -> ok;
         {pending, _}   ->
+            ?debug("wait_valid pending ~p (sleep ~p)~n", [Cnt, 500*(Max-Cnt+1)]),
             timer:sleep(500*(Max-Cnt+1)),
             wait_valid(FSM, Cnt-1,Max);
-        {_      , Err} -> {error, Err}
+        {_      , Err} ->
+            ?debug("wait_valid error: ~p~n", [Err]),
+            {error, Err}
     end.
 
 -spec get_challenge() -> error|map().

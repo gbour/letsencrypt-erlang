@@ -18,7 +18,6 @@
 -export([private_key/2, cert_request/3, cert_autosigned/3, certificate/4]).
 
 -include_lib("public_key/include/public_key.hrl").
--import(letsencrypt_utils, [bin/1]).
 
 % create key
 -spec private_key(undefined|{new, string()}|string(), string()) -> letsencrypt:ssl_privatekey().
