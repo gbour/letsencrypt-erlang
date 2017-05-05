@@ -10,3 +10,4 @@ rel/example_project
 .rebar
 .rebar3
 _build
+compile_commands.json
