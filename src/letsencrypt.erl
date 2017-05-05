@@ -226,7 +226,7 @@ make_cert_bg(FSM, Domain, Opts=#{async := Async}) ->
 
 -spec wait_valid(fsm_ref(), 0..10, 0..10) -> ok|{error, any()}.
 wait_valid(_FSM, 0, _) ->
-    ?debug("wait_valid timeout~n", [Err]),
+    ?debug("wait_valid timeout~n", []),
     {error, timeout};
 wait_valid(FSM, Cnt, Max) ->
     case gen_fsm:sync_send_event(FSM, check, 15000) of

@@ -152,7 +152,7 @@ priv_COMMON(Mode, Config, StartOpts) ->
     Async = maps:get(async, Opts, true),
     ?DEBUG("async: ~p, opts: ~p, startopts: ~p", [Async, Opts, StartOpts]),
 
-    {ok, Pid} = letsencrypt:start([{mode, Mode}, staging, {cert_path, "/tmp"}]++StartOpts),
+    {ok, _Pid} = letsencrypt:start([{mode, Mode}, staging, {cert_path, "/tmp"}]++StartOpts),
 
     R3 = case Async of
         false ->
@@ -175,7 +175,7 @@ priv_COMMON(Mode, Config, StartOpts) ->
     letsencrypt:stop(),
     % checking certificate returned
     ?DEBUG("result: ~p", [R3]),
-    {ok, #{cert := Cert, key := Key}} = R3,
+    {ok, #{cert := Cert, key := _Key}} = R3,
     certificate_validation(Cert, <<"le.wtf">>, maps:get(san, Opts, [])),
 
     ok.
