@@ -19,8 +19,8 @@ Features:
 
 Modes
 - [x] webroot
-- [x] slave (cowboy handler)
-- [x] standalone
+- [x] slave
+- [x] standalone (with http server)
 
 Validation challenges
 - [x] http-01 (http)
@@ -200,9 +200,9 @@ main() ->
     ok.
 ```
 
-### slave
+### slave
 
-*When your erlang application is already running a cowboy server listening on public http port*.
+*When your erlang application is already running an erlang http server, listening on public http port (ie cowboy)*.
 
 ```erlang
 
@@ -212,7 +212,7 @@ on_complete({State, Data}) ->
 main() ->
     Dispatch = cowboy_router:compile([
         {'_', [
-            {<<"/.well-known/acme-challenge/:token">>, letsencrypt_cowboy_handler, []}
+            {<<"/.well-known/acme-challenge/:token">>, my_letsencrypt_cowboy_handler, []}
         ]}
     ]),
     {ok, _} = cowboy:start_http(my_http_listener, 1, [{port, 80}],
@@ -222,6 +222,41 @@ main() ->
     letsencrypt:start([{mode,slave}, staging, {cert_path,"/path/to/certs"}]),
     letsencrypt:make_cert(<<"mydomain.tld">>, #{callback => fun on_complete/1}),
 
+    ok.
+```
+
+my_letsencrypt_cowboy_handler.erl contains the code to returns letsencrypt thumbprint matching received token
+
+```erlang
+-module(my_letsencrypt_cowboy_handler).
+
+-export([init/3, handle/2, terminate/3]).
+
+
+init(_, Req, []) ->
+    {Host,_} = cowboy_req:host(Req),
+
+    % NOTES
+    %   - cowboy_req:binding() returns undefined is token not set in URI
+    %   - letsencrypt:get_challenge() returns 'error' if token+thumbprint are not available
+    %
+    Challenges = letsencrypt:get_challenge(),
+    {Token,_}  = cowboy_req:binding(token, Req),
+
+    {ok, Req2} = case maps:get(Host, Challenges, undefined) of
+        #{token := Token, thumbprint := Thumbprint} ->
+            cowboy_req:reply(200, [{<<"content-type">>, <<"text/plain">>}], Thumbprint, Req);
+
+        _X     ->
+            cowboy_req:reply(404, Req)
+    end,
+
+    {ok, Req2, no_state}.
+
+handle(Req, State) ->
+    {ok, Req, State}.
+
+terminate(Reason, Req, State) ->
     ok.
 ```
 
