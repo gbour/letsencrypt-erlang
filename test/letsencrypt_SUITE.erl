@@ -23,6 +23,8 @@
 -define(DEBUG(Str), ct:log(default, 50, Str++"~n", [])).
 -define(DEBUG(Fmt, Args), ct:log(default, 50, Fmt++"~n", Args)).
 
+-define(HOSTNAME, <<"le.wtf">>).
+-define(HOSTNAME2, <<"le2.wtf">>).
 %-define(FAKE_CA, "happy hacker fake CA").
 -define(FAKE_CA, "h2ppy h2cker fake CA").
 
@@ -94,7 +96,7 @@ init_per_group(async, Config) ->
     [{filter, async}| setopt(Config, #{async => true})];
 % unidomain/san
 init_per_group(N=san, Config) ->
-    [{filler, san}| setopt(Config, #{san => [<<"le2.wtf">>]})];
+    [{filler, san}| setopt(Config, #{san => [?HOSTNAME2]})];
 
 init_per_group(GroupName, Config)   ->
     [{filter,GroupName}| Config].
@@ -156,7 +158,7 @@ priv_COMMON(Mode, Config, StartOpts) ->
 
     R3 = case Async of
         false ->
-            letsencrypt:make_cert(<<"le.wtf">>, Opts);
+            letsencrypt:make_cert(?HOSTNAME, Opts);
 
         true  ->
             % async callback
@@ -165,7 +167,7 @@ priv_COMMON(Mode, Config, StartOpts) ->
                 Parent ! {complete, R}
             end,
 
-            async = letsencrypt:make_cert(<<"le.wtf">>, Opts#{callback => C}),
+            async = letsencrypt:make_cert(?HOSTNAME, Opts#{callback => C}),
             receive
                 {complete, R2} -> R2
                 after 60000    -> {error, async_timeout}
@@ -176,7 +178,7 @@ priv_COMMON(Mode, Config, StartOpts) ->
     % checking certificate returned
     ?DEBUG("result: ~p", [R3]),
     {ok, #{cert := Cert, key := Key}} = R3,
-    certificate_validation(Cert, <<"le.wtf">>, maps:get(san, Opts, [])),
+    certificate_validation(Cert, ?HOSTNAME, maps:get(san, Opts, [])),
 
     ok.
 
