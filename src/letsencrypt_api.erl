@@ -20,6 +20,9 @@
 
 -import(letsencrypt_utils, [bin/1]).
 
+% ACME status values
+-type acme_status() :: 'pending'|'processing'|'valid'|'invalid'|'revoked'.
+
 % RFC7807 Problem Report type
 -record(problem, {type=none,instance=none,info=[]}).
 
@@ -139,8 +142,7 @@ challenge(post, Conn, Path, Key, Jws, Thumbprint) ->
     Nonce.
 
 
-% 'ok'|'invalid' => make custom type (derived from atom())
--spec challenge(status, pid(), string()) -> {'ok'|'invalid', atom()|binary()}.
+-spec challenge(status, pid(), string()) -> {acme_status(), atom()|binary()}.
 challenge(status, Conn, Path) ->
     {ok, Resp} = shotgun:get(Conn, Path, #{}),
     #{body := Body} = Resp,
@@ -173,7 +175,7 @@ new_cert(Conn, Path, Key, Jws, Csr) ->
     {Body, Nonce}.
 
 
--spec post(pid(), string(), map(), binary()) -> {ok, letsencrypt:nonce(), binary()}|{error,term()}|#problem{}.
+-spec post(pid(), string(), map(), binary()) -> {ok, letsencrypt:nonce(), binary()}|{error,{http,integer()}|#problem{}}.
 post(Conn, Path, Headers, Content) ->
     ?debug("== POST ~p~n", [Path]),
     {ok, Resp} = shotgun:post(Conn, Path, Headers#{<<"Content-Type">> => <<"application/jose+json">>}, 
@@ -188,7 +190,7 @@ post(Conn, Path, Headers, Content) ->
 
     case {Status, RespContentType} of
 	{_, {<<"application">>, <<"problem+json">>, _}} ->
-	    problem_report(Status, Body);
+	    {error, problem_report(Status, Body)};
 	{X, _} when X >= 400 ->
 	    {error, {http, X}};
 	_ ->
@@ -206,7 +208,7 @@ get_intermediate({Proto, Domain, Port, Path}, Opts) ->
     #{body := Body, status_code := 200} = Resp,
     {ok, Body}.
 
--spec status(binary()) -> atom().
+-spec status(binary()) -> acme_status()|'unknown'.
 status(<<"pending">>)    -> pending;
 status(<<"processing">>) -> processing;
 status(<<"valid">>)      -> valid;
