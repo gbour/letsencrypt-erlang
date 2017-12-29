@@ -59,7 +59,7 @@ before_script:
     #
     - cd $GOPATH/src/github.com/letsencrypt/boulder
     # switch to prod/staging version
-    - REV=`elinks -dump $BOULDER_BUILD|sed -e "s/.*Boulder=( +\([0-9a-f]\+\) .*/\1/"`
+    - REV=`elinks -dump $BOULDER_BUILD|sed -e "s/.*Boulder=(.*+\([0-9a-f]\+\) .*/\1/"`
     - echo "using boulder rev +$REV"
     - git checkout $REV
     - git log -1
