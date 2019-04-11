@@ -25,7 +25,7 @@
     -define(AGREEMENT_URL  , <<"http://boulder:4000/terms/v1">>).
     -define(debug(Fmt, Args), io:format(Fmt, Args)).
 -else.
-    -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.1.1-August-1-2016.pdf">>).
+    -define(AGREEMENT_URL  , <<"https://letsencrypt.org/documents/LE-SA-v1.2-November-15-2017.pdf">>).
     -define(debug(Fmt, Args), ok).
 -endif.
 
