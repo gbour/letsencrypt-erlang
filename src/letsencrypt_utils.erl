@@ -59,6 +59,8 @@ str(X) when is_binary(X) ->
     binary_to_list(X);
 str(X) when is_integer(X) ->
     integer_to_list(X);
+str(X) when is_list(X) ->
+	X;
 str(_X) ->
     throw(invalid).
 

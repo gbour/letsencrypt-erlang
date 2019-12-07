@@ -18,6 +18,9 @@
 -export([connect/1, connect/2, close/1, get_nonce/2, new_reg/4, new_authz/6, challenge/6, challenge/3]).
 -export([new_cert/5, get_intermediate/2]).
 
+% V2
+-export([directory/2, nonce/2, account/4, order/5, authorization/4, challenge2/4]).
+
 -import(letsencrypt_utils, [bin/1]).
 
 
@@ -203,3 +206,105 @@ status(_Status)       ->
     io:format("unknown status: ~p~n", [_Status]),
     unknown.
 
+%% V2
+%%
+
+directory(Uri, Opts) ->
+	{ok, #{body := Body}} = get(Uri, Opts),
+	Json = jiffy:decode(Body, [return_maps]),
+
+	{ok, Json}.
+
+
+nonce(#{<<"newNonce">> := Uri}, Opts) ->
+	{ok, #{headers := Headers}} = get(Uri, Opts),
+	{ok, proplists:get_value(<<"replay-nonce">>, Headers)}.
+
+account(#{<<"newAccount">> := Uri}, Key, Jws, Opts) ->
+    Payload = #{
+		termsOfServiceAgreed => true,
+		contact => [
+				   ]
+    },
+    Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, Payload),
+	debug(true, "jws= ~p :: ~p~n", [Jws, Req]),
+
+    {ok, #{body := Body, headers := Headers}} = post2(Uri, #{}, Req, Opts),
+	Nonce = proplists:get_value(<<"replay-nonce">>, Headers),
+	Location = proplists:get_value(<<"location">>, Headers),
+	{ok, Location, Body, Nonce}.
+
+order(#{<<"newOrder">> := Uri}, Key, Jws, Domain, Opts) ->
+	Payload = #{
+		identifiers => [#{
+			type => dns,
+			value => Domain
+		 }]
+	},
+
+    Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, Payload),
+	debug(true, "jws= ~p :: ~p~n", [Jws, Req]),
+
+    {ok, #{body := Body, headers := Headers}} = post2(Uri, #{}, Req, Opts),
+	Nonce2 = proplists:get_value(<<"replay-nonce">>, Headers),
+	Location = proplists:get_value(<<"location">>, Headers),
+	{ok, Location, Body, Nonce2}.
+
+% query authorization
+authorization(Uri, Key, Jws, Opts) ->
+	% POST-as-GET = no payload
+    Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, empty),
+	debug(true, "jws= ~p :: ~p~n", [Jws, Req]),
+
+    {ok, #{body := Body, headers := Headers}} = post2(Uri, #{}, Req, Opts),
+	Nonce2 = proplists:get_value(<<"replay-nonce">>, Headers),
+	Location = proplists:get_value(<<"location">>, Headers),
+	{ok, Location, Body, Nonce2}.
+
+
+%TODO: reuse same logic as challenge()
+challenge2(Challenge=#{<<"url">> := Uri}, Key, Jws, Opts) ->
+	% POST-as-GET = no payload
+    Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, #{}),
+	debug(true, "jws= ~p :: ~p~n", [Jws, Req]),
+
+    {ok, #{body := Body, headers := Headers}} = post2(Uri, #{}, Req, Opts),
+	Nonce2 = proplists:get_value(<<"replay-nonce">>, Headers),
+	Location = proplists:get_value(<<"location">>, Headers),
+	{ok, Location, Body, Nonce2}.
+
+
+
+get(Uri, #{debug := Debug, netopts := Opts}) ->
+    {ok, {Proto, _, Host, Port, Path, _}} = http_uri:parse(letsencrypt_utils:str(Uri)),
+
+	debug(Debug, "~p ~p~n", [Proto, Path]),
+    {ok, Conn} = shotgun:open(Host, Port, Proto, #{}),
+    {ok, Resp} = shotgun:get(Conn, Path, #{}, Opts),
+    shotgun:close(Conn),
+
+	debug(Debug, "get(~p): => ~p~n", [Uri, Resp]),
+	{ok, Resp}.
+
+post2(Uri, Headers, Content, #{debug := Debug, netopts := Opts}) ->
+    {ok, {Proto, _, Host, Port, Path, _}} = http_uri:parse(letsencrypt_utils:str(Uri)),
+
+	debug(Debug, "~p ~p~n", [Proto, Path]),
+    {ok, Conn} = shotgun:open(Host, Port, Proto, #{}),
+    {ok, Resp} = shotgun:post(Conn, Path, Headers#{<<"content-type">> =>
+												   <<"application/jose+json">>}, 
+							  Content, Opts),
+    shotgun:close(Conn),
+
+	debug(Debug, "get(~p): => ~p~n", [Uri, Resp]),
+	{ok, Resp}.
+
+
+    %#{body := Body, headers := RHeaders, status_code := _Status} = Resp,
+    %Nonce = proplists:get_value(<<"replay-nonce">>, RHeaders),
+    %{ok, Nonce, Body}.
+
+debug(true, Fmt, Args) ->
+	io:format(Fmt, Args);
+debug(_,_,_) ->
+	ok.
