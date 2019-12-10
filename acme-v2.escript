@@ -69,7 +69,16 @@ main([Domain]) ->
 	Thumbprint = letsencrypt_jws:thumbprint2(AcctKey, Token),
 	io:format("key: ~p, token: ~p, thumb: ~p~n", [AcctKey, Token, Thumbprint]),
 
-	% TODO : create validation file
+	% write thumbprint to file
+	{ok, Fd} = file:open(<<"/tmp/le/webroot/.well-known/acme-challenge/", Token/binary>>,
+						[raw, write, binary]),
+	file:write(Fd, Thumbprint),
+	file:close(Fd),
+
+
+	% wait enough time to let acme server to validate hash file
+	timer:sleep(10000),
+
 	%
 	%Thumbprint := letsencrypt_jws:thumbprint2(AcctKey, 
 	%letsencrypt_api:challenge2(Challenge, Key, Jws2#{nonce => Nonce4}, Opts),
@@ -77,6 +86,7 @@ main([Domain]) ->
 
 
 	%io:format("biz ~p", [Key]),
+	io:format("DONE"),
 	ok.
 
 include_libs() ->
