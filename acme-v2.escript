@@ -8,7 +8,10 @@ main([Domain]) ->
 	io:format("Domain= ~p~n", [letsencrypt_utils:bin(Domain)]),
 	%halt(1),
 
-	Key = letsencrypt_ssl:private_key(undefined, "/tmp/le/certs"),
+	CertPath = "/tmp/le/certs",
+	WwwPath = "/tmp/le/webroot",
+
+	Key = letsencrypt_ssl:private_key(undefined, CertPath),
     Jws = letsencrypt_jws:init(Key),
 
     %Uri = "https://acme-v02.api.letsencrypt.org/directory",
@@ -70,20 +73,48 @@ main([Domain]) ->
 	io:format("key: ~p, token: ~p, thumb: ~p~n", [AcctKey, Token, Thumbprint]),
 
 	% write thumbprint to file
-	{ok, Fd} = file:open(<<"/tmp/le/webroot/.well-known/acme-challenge/", Token/binary>>,
+	io:format("writing thumbprint file~n"),
+	{ok, Fd} = file:open(<<(letsencrypt_utils:bin(WwwPath))/binary, "/.well-known/acme-challenge/", Token/binary>>,
 						[raw, write, binary]),
 	file:write(Fd, Thumbprint),
 	file:close(Fd),
 
 
+	% notify server - challenge is ready.
+	{ok, _, _, Nonce5} = letsencrypt_api:challenge2(Challenge, Key, Jws2#{nonce => Nonce4}, Opts),
 	% wait enough time to let acme server to validate hash file
+	io:format("wait 10secs~n"),
 	timer:sleep(10000),
 
-	%
-	%Thumbprint := letsencrypt_jws:thumbprint2(AcctKey, 
-	%letsencrypt_api:challenge2(Challenge, Key, Jws2#{nonce => Nonce4}, Opts),
+	% checking authorization (is challenge validated ?)
+	% status should be 'valid'
+	{ok, _, _, Nonce6} = letsencrypt_api:authorization(AuthzUri, Key,
+																   Jws2#{nonce =>
+																		 Nonce5},
+																   Opts),
 
+	% build & send CSR (with dedicated private key)
+	Sans = [],
+	#{file := KeyFile} = letsencrypt_ssl:private_key({new, Domain ++ ".key"}, CertPath),
+	Csr = letsencrypt_ssl:cert_request(letsencrypt_utils:str(Domain), CertPath, Sans),
+	io:format("key= ~p, csr= ~p~n", [KeyFile, Csr]),
 
+	% JBody == order
+	% we want 'finalize' value
+	FinalizeUri = maps:get(<<"finalize">>, JBody),
+	io:format("finalizing: sending csr to ~p~n", [FinalizeUri]),
+	% NOTE: we reuse 'order' api
+	% TODO: create dedicated api
+	{ok, _, FinalizeBody, Nonce7} = letsencrypt_api:finalize(FinalizeUri, Csr, Key, Jws2#{nonce => Nonce6}, Opts),
+	io:format("~p~n", [Nonce7]),
+
+	FinalizeJson = jiffy:decode(FinalizeBody, [return_maps]),
+	% download certificate
+	{ok, _, CertBody, _} = letsencrypt_api:certificate(FinalizeJson, Key, Jws2#{nonce => Nonce7}, Opts),
+	io:format("cert= ~p~n", [CertBody]),
+	{ok, Fd2} = file:open(CertPath++"/"++Domain++".cert", [raw, write, binary]),
+	file:write(Fd2, CertBody),
+	file:close(Fd2),
 
 	%io:format("biz ~p", [Key]),
 	io:format("DONE"),
