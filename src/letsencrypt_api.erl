@@ -19,7 +19,7 @@
 -export([new_cert/5, get_intermediate/2]).
 
 % V2
--export([directory/2, nonce/2, account/4, order/5, authorization/4, challenge2/4]).
+-export([directory/2, nonce/2, account/4, order/5, authorization/4, challenge2/4, finalize/5, certificate/4]).
 
 -import(letsencrypt_utils, [bin/1]).
 
@@ -273,6 +273,32 @@ challenge2(Challenge=#{<<"url">> := Uri}, Key, Jws, Opts) ->
 	Location = proplists:get_value(<<"location">>, Headers),
 	{ok, Location, Body, Nonce2}.
 
+% finalize order
+finalize(Uri, Csr, Key, Jws, Opts) ->
+	Payload = #{
+	    csr => Csr
+	},
+
+    Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, Payload),
+	debug(true, "jws= ~p :: ~p~n", [Jws, Req]),
+
+    {ok, #{body := Body, headers := Headers}} = post2(Uri, #{}, Req, Opts),
+	Nonce = proplists:get_value(<<"replay-nonce">>, Headers),
+	Location = proplists:get_value(<<"location">>, Headers),
+	{ok, Location, Body, Nonce}.
+
+% get certificate
+certificate(#{<<"certificate">> := Uri}, Key, Jws, Opts) ->
+	% POST-as-GET = no payload
+    Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, empty),
+	debug(true, "jws= ~p :: ~p~n", [Jws, Req]),
+
+    {ok, #{body := Body, headers := Headers}} = post2(Uri, #{}, Req, Opts),
+	Nonce2 = proplists:get_value(<<"replay-nonce">>, Headers),
+	Location = proplists:get_value(<<"location">>, Headers),
+	{ok, Location, Body, Nonce2}.
+
+
 
 
 get(Uri, #{debug := Debug, netopts := Opts}) ->
@@ -296,7 +322,7 @@ post2(Uri, Headers, Content, #{debug := Debug, netopts := Opts}) ->
 							  Content, Opts),
     shotgun:close(Conn),
 
-	debug(Debug, "get(~p): => ~p~n", [Uri, Resp]),
+	debug(Debug, "post(~p): => ~p~n", [Uri, Resp]),
 	{ok, Resp}.
 
 

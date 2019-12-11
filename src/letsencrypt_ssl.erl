@@ -52,12 +52,12 @@ cert_request(Domain, CertsPath, SANs) ->
     KeyFile  = CertsPath ++ "/" ++ Domain ++ ".key",
     CertFile = CertsPath ++ "/" ++ Domain ++ ".csr",
     {ok, CertFile} = mkcert(request, Domain, CertFile, KeyFile, SANs),
-    %io:format("CSR ~p~n", [CertFile]),
+    io:format("CSR ~p~n", [CertFile]),
 
     {ok, RawCsr} = file:read_file(CertFile),
     [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
 
-    %io:format("csr= ~p~n", [Csr]),
+    io:format("csr= ~p~n", [Csr]),
     letsencrypt_utils:b64encode(Csr).
 
 
@@ -74,7 +74,7 @@ mkcert(request, Domain, OutName, Keyfile, []) ->
 %    CertFile = CertsPath++"/"++Domain++".csr",
     Cmd = io_lib:format("openssl req -new -key '~s' -subj '/CN=~s' -out '~s'", [Keyfile, Domain, OutName]),
     _R  = os:cmd(Cmd),
-    %io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _R]),
+    io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _R]),
 
     {ok, OutName};
 mkcert(Type, Domain, OutName, Keyfile, SANs) ->
@@ -95,7 +95,7 @@ mkcert(Type, Domain, OutName, Keyfile, SANs) ->
     end,
 
     _Status  = os:cmd(Cmd1),
-    %io:format("mkcert(~p): ~p => ~p~n", [Type, lists:flatten(Cmd1), _Status]),
+    io:format("mkcert(~p): ~p => ~p~n", [Type, lists:flatten(Cmd1), _Status]),
 
     file:delete(ConfFile),
     {ok, OutName}.
