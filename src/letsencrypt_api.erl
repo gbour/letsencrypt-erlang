@@ -298,16 +298,39 @@ certificate(#{<<"certificate">> := Uri}, Key, Jws, Opts) ->
 	Location = proplists:get_value(<<"location">>, Headers),
 	{ok, Location, Body, Nonce2}.
 
+conn(Key) ->
+	conn(default, Key).
 
+conn(badarg , Key) ->
+	debug(true, "Creating connections store~n", []),
+	ets:new(conns, [set, named_table]),
+	conn(default, Key);
+conn(default, Key={Host, Port, Proto}) ->
+	try
+		debug(true, "Getting connection to ~p:~p~n", [Host, Port]),
+		case ets:lookup(conns, Key) of
+			% not found
+			[] ->
+				debug(true, "Opening connection to ~p:~p~n", [Host, Port]),
+				{ok, Conn1} = shotgun:open(Host, Port, Proto),
+				ets:insert(conns, {Key, Conn1}),
+				Conn1;
+			[{_, Conn2}] ->
+				Conn2
+		end
+	catch
+		_:Reason -> conn(Reason, Key)
+	end.
 
 
 get(Uri, #{debug := Debug, netopts := Opts}) ->
     {ok, {Proto, _, Host, Port, Path, _}} = http_uri:parse(letsencrypt_utils:str(Uri)),
 
-	debug(Debug, "~p ~p~n", [Proto, Path]),
-    {ok, Conn} = shotgun:open(Host, Port, Proto, #{}),
+	% we want to reuse connections to same host:port
+	Conn = conn({Host, Port, Proto}),
+
+	debug(Debug, "querying ~p~n", [Uri]),
     {ok, Resp} = shotgun:get(Conn, Path, #{}, Opts),
-    shotgun:close(Conn),
 
 	debug(Debug, "get(~p): => ~p~n", [Uri, Resp]),
 	{ok, Resp}.
@@ -316,11 +339,11 @@ post2(Uri, Headers, Content, #{debug := Debug, netopts := Opts}) ->
     {ok, {Proto, _, Host, Port, Path, _}} = http_uri:parse(letsencrypt_utils:str(Uri)),
 
 	debug(Debug, "~p ~p~n", [Proto, Path]),
-    {ok, Conn} = shotgun:open(Host, Port, Proto, #{}),
+	Conn = conn({Host, Port, Proto}),
     {ok, Resp} = shotgun:post(Conn, Path, Headers#{<<"content-type">> =>
 												   <<"application/jose+json">>}, 
 							  Content, Opts),
-    shotgun:close(Conn),
+    %shotgun:close(Conn),
 
 	debug(Debug, "post(~p): => ~p~n", [Uri, Resp]),
 	{ok, Resp}.
