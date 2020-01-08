@@ -15,7 +15,7 @@
 -module(letsencrypt_ssl).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([private_key/2, cert_request/3, cert_autosigned/3, certificate/4]).
+-export([private_key/2, cert_request/3, cert_autosigned/3, certificate/3]).
 
 -include_lib("public_key/include/public_key.hrl").
 -import(letsencrypt_utils, [bin/1]).
@@ -100,27 +100,12 @@ mkcert(Type, Domain, OutName, Keyfile, SANs) ->
     file:delete(ConfFile),
     {ok, OutName}.
 
-
--spec certificate(string(), binary(), binary(), string()) -> string().
-certificate(Domain, DomainCert, IntermediateCert, CertsPath) ->
+% domain certificate only
+certificate(Domain, DomainCert, CertsPath) ->
     FileName = CertsPath++"/"++Domain++".crt",
     %io:format("domain cert: ~p~nintermediate: ~p~n", [DomainCert, IntermediateCert]),
     %io:format("writing final certificate to ~p~n", [FileName]),
 
-    file:write_file(FileName, <<(pem_format(DomainCert))/binary, $\n, IntermediateCert/binary>>),
+    file:write_file(FileName, DomainCert),
     FileName.
 
-
--spec pem_format(binary()) -> binary().
-pem_format(Cert) ->
-    <<"-----BEGIN CERTIFICATE-----\n",
-      (pem_format(base64:encode(Cert), <<>>))/binary, $\n,
-      "-----END CERTIFICATE-----">>.
-
--spec pem_format(binary(), binary()) -> binary().
-pem_format(<<>>, <<$\n, Fmt/binary>>) ->
-    Fmt;
-pem_format(<<Head:64/binary, Rest/binary>>, Fmt)  ->
-    pem_format(Rest, <<Fmt/binary, $\n, Head/binary>>);
-pem_format(Rest, Fmt)  ->
-    pem_format(<<>>, <<Fmt/binary, $\n, Rest/binary>>).
