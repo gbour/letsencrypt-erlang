@@ -51,11 +51,13 @@ before_install:
 #    - cd $TRAVIS_BUILD_DIR
 
 install:
-    - ./rebar3 update
-    - DEBUG=1 ./rebar3 compile
+#    - ./rebar3 update
+#    - DEBUG=1 ./rebar3 compile
 
 before_script:
-    - docker-compose -f docker-compose.yml up
+    - docker-compose -f docker-compose.yml up > /tmp/pebble.log&
+    - sleep 10
+    - curl --request POST --data '{"ip":"10.30.50.1"}' http://localhost:8055/set-default-ipv4
 #    # serve CA certificate
 #    # TODO: replace by python SimpleHTTPServer
 #    # NOTE: no need to serve CA anymore ?
@@ -86,14 +88,15 @@ before_script:
 #    #- http GET http://127.0.0.1:3099/test/test-ca.pem
 #    - ./rebar3 ct
 #
-#after_failure:
+after_failure:
 #    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
 #    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/letsencrypt_suite.test_*
 #    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/unexpected_io.log.html
-#    - cat /tmp/boulder.log
+    - cat /tmp/pebble.log
 #
 #after_success:
 #    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
 #    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/letsencrypt_suite.test_*
 #    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/unexpected_io.log.html
+    - cat /tmp/pebble.log
 #
