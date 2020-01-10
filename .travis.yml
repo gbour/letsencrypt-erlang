@@ -1,12 +1,9 @@
-sudo: required
+os: linux
 dist: trusty
 
 language: erlang
-
 otp_release:
-    - 19.0
-    - 18.2.1
-    - 17.5
+    - 22.2
 
 services:
     - docker
@@ -20,76 +17,45 @@ addons:
 env:
     global:
         - GOPATH=/tmp/go
-        - GO15VENDOREXPERIMENT=1
         - PATH=$GOPATH/bin:$PATH
-        - DOCKER_VERSION=1.9.1-0~trusty
 
-    matrix:
-        - BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
+    #matrix:
+        #- BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
         #- BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
 
 # we only test boulder staging version against last OTP version
-matrix:
-    include:
-        - otp_release: 18.2.1
-          env: BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
+#matrix:
+#    include:
+#        - otp_release: 18.2.1
+#          env: BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
 
 
 before_install:
-    # small files webservers
-    - git clone --depth=1 https://github.com/jeanparpaillon/averell.git averell
-    - cd averell && make && make
-    - cd $TRAVIS_BUILD_DIR
-    # letsencrypt server - requires docker >= 1.9
-    # - sudo apt-get -o Dpkg::Options::="--force-confnew" install -y docker-engine=${DOCKER_VERSION}
-    - pip install --user docker-compose
-    - go version
-    - docker --version
-    - ~/.local/bin/docker-compose version
-    - git clone https://github.com/letsencrypt/boulder.git $GOPATH/src/github.com/letsencrypt/boulder
-    - cd $TRAVIS_BUILD_DIR
+    - wget https://raw.githubusercontent.com/letsencrypt/pebble/master/docker-compose.yml
 
 install:
     - ./rebar3 update
-    - DEBUG=1 ./rebar3 compile
+    - DEBUG=1 ./rebar3 as test compile
 
 before_script:
-    # serve CA certificate
-    - averell/averell -p 3099 -v $GOPATH/src/github.com/letsencrypt/boulder&
-    #
-    - cd $GOPATH/src/github.com/letsencrypt/boulder
-    # switch to prod/staging version
-    - REV=`elinks -dump $BOULDER_BUILD|sed -e "s/.*Boulder=(.*+\([0-9a-f]\+\) .*/\1/"`
-    - echo "using boulder rev +$REV"
-    - git checkout $REV
-    - git log -1
-    # prevent limiting certificates generation
-    - "sed -i 's/threshold: 5/threshold: 100/' test/rate-limit-policies.yml"
-    #- cat test/rate-limit-policies.yml
-    # we must set FAKE_DNS addr as localhost viewed by docker guest
-    - export DOCKER_IP=`ip addr show docker0|grep "inet "|sed -e "s/.*inet \([^ \/]\+\).*/\1/"`
-    - "sed -ie \"s/FAKE_DNS: .*/FAKE_DNS: $DOCKER_IP/g\" docker-compose.yml"
-    - cat docker-compose.yml
-    # running boulder server (in docker)
-    - ~/.local/bin/docker-compose up > /tmp/boulder.log&
-    - cd $TRAVIS_BUILD_DIR
-    # waiting for boulder being fully started
-    - r=1; while [ $r -ne 0 ] ; do elinks -dump http://localhost:4000/directory 2>/dev/null; r=$?; sleep 5; done
+    - docker-compose -f docker-compose.yml up > /tmp/pebble.log&
+    - sleep 10
+    - curl --request POST --data '{"ip":"10.30.50.1"}' http://localhost:8055/set-default-ipv4
 
-
-script: 
+#
+script:
     - make dialize
-    #- http GET http://127.0.0.1:3099/test/test-ca.pem
-    - ./rebar3 ct
-
+    - DEBUG=1 ./rebar3 ct > /tmp/ct.log 2>&1
+#
 after_failure:
+    - cat /tmp/pebble.log
+    - cat /tmp/ct.log
     - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
     - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/letsencrypt_suite.test_*
     - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/unexpected_io.log.html
-    - cat /tmp/boulder.log
-
+#
 after_success:
     - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
     - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/letsencrypt_suite.test_*
     - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/unexpected_io.log.html
-
+    - cat /tmp/pebble.log
