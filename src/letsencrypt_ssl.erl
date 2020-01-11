@@ -1,4 +1,4 @@
-%% Copyright 2015-2016 Guillaume Bour
+%% Copyright 2015-2020 Guillaume Bour
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -66,38 +66,19 @@ cert_request(Domain, CertsPath, SANs) ->
 -spec cert_autosigned(string(), string(), list(string())) -> {ok, string()}.
 cert_autosigned(Domain, KeyFile, SANs) ->
     CertFile = "/tmp/"++Domain++"-tlssni-autosigned.pem",
-    mkcert(autosigned, Domain, CertFile, KeyFile, SANs).
+    mkcert(request, Domain, CertFile, KeyFile, SANs).
 
 
 -spec mkcert(request|autosigned, string(), string(), string(), list(string())) -> {ok, string()}.
-mkcert(request, Domain, OutName, Keyfile, []) ->
-%    CertFile = CertsPath++"/"++Domain++".csr",
-    Cmd = io_lib:format("openssl req -new -key '~s' -subj '/CN=~s' -out '~s'", [Keyfile, Domain, OutName]),
-    _R  = os:cmd(Cmd),
-    io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _R]),
+mkcert(request, Domain, OutName, Keyfile, SANs) ->
+    AltNames = lists:foldl(fun(San, Acc) ->
+        <<Acc/binary, ", DNS:", San/binary>>
+    end, <<"subjectAltName=DNS:", (bin(Domain))/binary>>, SANs),
+    Cmd = io_lib:format("openssl req -new -key '~s' -out '~s' -subj '/CN=~s' -addext '~s'",
+                        [Keyfile, OutName, Domain, AltNames]),
 
-    {ok, OutName};
-mkcert(Type, Domain, OutName, Keyfile, SANs) ->
-    %io:format("USE SANS~n"),
-    <<$,, SANEntry/binary>> = lists:foldl(fun(X, Acc) -> <<Acc/binary, ",DNS:", X/binary>> end, <<>>, SANs),
-
-    {ok, File} = file:read_file("/etc/ssl/openssl.cnf"),
-    File2 = <<File/binary, "\n[SAN]\nsubjectAltName=DNS:", (bin(Domain))/binary,$,, SANEntry/binary>>,
-    ConfFile = <<"/tmp/letsencrypt_san_openssl.cnf">>,
-    file:write_file(ConfFile, File2),
-
-    Cmd = io_lib:format(
-        "openssl req -new -key '~s' -out '~s' -subj '/CN=~s' -config '~s'", 
-        [Keyfile, OutName, Domain, ConfFile]),
-    Cmd1 = case Type of
-        request    -> [Cmd | " -reqexts SAN" ];
-        autosigned -> [Cmd | " -extensions SAN -x509 -sha256 -days 1" ]
-    end,
-
-    _Status  = os:cmd(Cmd1),
-    io:format("mkcert(~p): ~p => ~p~n", [Type, lists:flatten(Cmd1), _Status]),
-
-    file:delete(ConfFile),
+    _Status  = os:cmd(Cmd),
+    io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _Status]),
     {ok, OutName}.
 
 % domain certificate only
