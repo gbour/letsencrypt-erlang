@@ -47,13 +47,19 @@ main([Domain]) ->
 	%TODO: iterate over list
 	% Order may contains several authorizations urls
 	AuthzUri = lists:nth(1, maps:get(<<"authorizations">>, Order)),
+
+
 	{ok, Authorization, AuthzLocation, Nonce4} = 
 		letsencrypt_api:authorization(AuthzUri, Key, Jws2#{nonce => Nonce3}, Opts),
 	io:format("~p, ~p, ~p~n", [AuthzLocation, Authorization, Nonce4]),
 
 	% extract http challenge (1st in list)
 	% TODO: allow choosing challenge to validate
-	Challenge = lists:nth(1, maps:get(<<"challenges">>, Authorization)),
+	[Challenge] = lists:filter(fun(C) ->
+			maps:get(<<"type">>, C, error) =:= <<"http-01">>
+		end,
+		maps:get(<<"challenges">>, Authorization)
+	),
 	io:format("challenge= ~p~n", [Challenge]),
 
 	% challenges types
