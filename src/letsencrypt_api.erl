@@ -15,8 +15,8 @@
 -module(letsencrypt_api).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([directory/2, nonce/2, account/4, order/5, authorization/4, challenge/4,
-		 finalize/5, certificate/4]).
+-export([directory/2, nonce/2, account/4, order/5, order/4, authorization/4, challenge/4,
+		 finalize/5, certificate/4, status/1]).
 
 -import(letsencrypt_utils, [str/1]).
 
@@ -144,6 +144,7 @@ directory(Env, Opts) ->
 		staging -> ?STAGING_API_URL;
 		_       -> ?DEFAULT_API_URL
 	end,
+	?debug("Getting directory at ~p~n", [Uri]),
 
 	{ok, #{json := Directory}} = request(get, Uri, #{}, nil, Opts#{json => true}),
 	{ok, Directory}.
@@ -220,6 +221,22 @@ order(#{<<"newOrder">> := Uri}, Domain, Key, Jws, Opts) ->
 		nonce    := Nonce
 	}} = request(post, Uri, #{}, Req, Opts#{json => true}),
 	{ok, Resp, Location, Nonce}.
+
+% order(Uri, Key, Jws, Opts)
+%
+% Get order state.
+%
+order(Uri, Key, Jws, Opts) ->
+    % POST-as-GET = no payload
+    Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, empty),
+
+    {ok, #{
+        json     := Resp,
+        location := Location,
+        nonce    := Nonce
+    }} = request(post, Uri, #{}, Req, Opts#{json=> true}),
+
+    {ok, Resp, Location, Nonce}.
 
 % authorization(Uri, Key, Jws, Opts)
 %

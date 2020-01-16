@@ -18,9 +18,10 @@
 
 -export([make_cert/2, make_cert_bg/2, get_challenge/0]).
 -export([start/1, stop/0, init/1, handle_event/3, handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
--export([idle/3, pending/3, valid/3]).
+-export([idle/3, pending/3, valid/3, finalize/3]).
 
 -import(letsencrypt_utils, [bin/1, str/1]).
+-import(letsencrypt_api, [status/1]).
 
 % uri format compatible with shotgun library
 -type mode()           :: 'webroot'|'slave'|'standalone'.
@@ -60,6 +61,9 @@
 	account_key = undefined,
 	order = undefined,
 	challenges = []                 :: map(),
+
+	% certificate/csr key file
+	cert_key_file = undefined,
 
     % api options
 	opts = #{netopts => #{timeout => 30000}} :: map()
@@ -165,7 +169,11 @@ make_cert_bg(Domain, Opts=#{async := Async}) ->
 
             case wait_valid(10) of
                 ok ->
-                    gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000);
+                    Status = gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000),
+					case wait_finalized(Status, 10) of
+						{ok, Res} -> {ok, Res};
+						Err -> Err
+					end;
 
                 Error ->
                     gen_fsm:send_all_state_event({global, ?MODULE}, reset),
@@ -251,7 +259,9 @@ idle({create, Domain, _Opts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
 		kid   => Location
 	},
 	%TODO: checks order is ok
-	{ok, Order, _, Nonce3} = letsencrypt_api:order(Dir, bin(Domain), Key, Jws2, Opts),
+	{ok, Order, OrderLocation, Nonce3} = letsencrypt_api:order(Dir, bin(Domain), Key, Jws2, Opts),
+	% we need to keep trace of order location
+	Order2 = Order#{<<"location">> => OrderLocation},
 
     %Nonce2    = letsencrypt_api:new_reg(Conn, BasePath, Key, JWS#{nonce => Nonce}),
     %AuthzResp = authz([Domain|SANs], ChallengeType, State#state{conn=Conn, nonce=Nonce2}),
@@ -267,7 +277,7 @@ idle({create, Domain, _Opts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
     end,
 
     {reply, Reply, StateName, 
-     State#state{domain=Domain, jws=Jws2, nonce=Nonce5, order=Order, challenges=Challenges, sans=[]}}.
+     State#state{domain=Domain, jws=Jws2, nonce=Nonce5, order=Order2, challenges=Challenges, sans=[]}}.
 
 
 % state 'pending'
@@ -323,28 +333,75 @@ pending(_Action, _, State=#state{order=#{<<"authorizations">> := Authzs}, nonce=
 % Finalize acme order and generate ssl certificate.
 %
 % returns:
-%	#{key, cert}
-%		- Key is certificate private key filename
-%		- Cert is certificate PEM filename
+%	Status: order status
 %
 % transition:
-%	state 'idle'
+%	state 'finalize'
 valid(_, _, State=#state{mode=Mode, domain=Domain, sans=SANs, cert_path=CertPath,
 						 order=Order, key=Key, jws=Jws, nonce=Nonce, opts=Opts}) ->
 
     challenge_destroy(Mode, State),
 
+	%NOTE: keyfile is required for csr generation
 	#{file := KeyFile} = letsencrypt_ssl:private_key({new, str(Domain) ++ ".key"}, CertPath),
 	Csr = letsencrypt_ssl:cert_request(str(Domain), CertPath, SANs),
 	{ok, FinOrder, _, Nonce2} = letsencrypt_api:finalize(Order, Csr, Key,
 														 Jws#{nonce => Nonce}, Opts),
 
-	% download certificate
-	{ok, Cert} = letsencrypt_api:certificate(FinOrder, Key, Jws#{nonce => Nonce2}, Opts),
-    CertFile = letsencrypt_ssl:certificate(str(Domain), Cert, CertPath),
+	{reply, status(maps:get(<<"status">>, FinOrder, nil)), finalize,
+	 State#state{order=FinOrder#{<<"location">> => maps:get(<<"location">>, Order)},
+	             cert_key_file=KeyFile, nonce=Nonce2}}.
 
-    {reply, {ok, #{key => bin(KeyFile), cert => bin(CertFile)}}, idle,
-	 State#state{nonce=undefined}}.
+% state 'finalize'
+%
+% When order is being finalized, and certificate generation is ongoing.
+%
+% finalize(processing)
+%
+% Wait for certificate generation being complete (order status == 'valid').
+%
+% returns:
+%	Status : order status
+%
+% transition:
+%   state 'processing' : still ongoing
+%   state 'valid'      : certificate is ready
+finalize(processing, _, State=#state{order=Order, key=Key, jws=Jws, nonce=Nonce, opts=Opts}) ->
+	{ok, Order2, _, Nonce2} = letsencrypt_api:order(
+		maps:get(<<"location">>, Order, nil),
+		Key, Jws#{nonce => Nonce}, Opts),
+	{reply, status(maps:get(<<"status">>, Order2, nil)), finalize,
+	 State#state{order=Order2, nonce=Nonce2}
+	};
+
+% finalize(valid)
+%
+% Download certificate & save into file.
+%
+% returns;
+%	#{key, cert}
+%		- Key is certificate private key filename
+%		- Cert is certificate PEM filename
+%
+% transition:
+%   state 'idle' : fsm complete, going back to initial state
+finalize(valid, _, State=#state{order=Order, domain=Domain, cert_key_file=KeyFile,
+                                cert_path=CertPath, key=Key, jws=Jws, nonce=Nonce,
+                                opts=Opts}) ->
+	% download certificate
+	{ok, Cert} = letsencrypt_api:certificate(Order, Key, Jws#{nonce => Nonce}, Opts),
+	CertFile   = letsencrypt_ssl:certificate(str(Domain), Cert, CertPath),
+
+	{reply, {ok, #{key => bin(KeyFile), cert => bin(CertFile)}}, idle,
+	 State#state{nonce=undefined}};
+
+% finalize(Status)
+%
+% Any other order status leads to exception.
+%
+finalize(Status, _, State) ->
+	io:format("unknown finalize status ~p~n", [Status]),
+	{reply, {error, Status}, finalize, State}.
 
 
 %%%
@@ -423,6 +480,16 @@ getopts([{cert_path, Path}|Args], State) ->
         Args,
         State#state{cert_path = Path}
     );
+getopts([{webroot_path, Path}|Args], State) ->
+    getopts(
+        Args,
+        State#state{webroot_path = Path}
+    );
+getopts([{port, Port}|Args], State) ->
+    getopts(
+        Args,
+        State#state{port = Port}
+    );
 % for compatibility. Will be removed in future release
 getopts([{connect_timeout, Timeout}|Args], State) ->
 	io:format("'connect_timeout' option is deprecated. Please use 'http_timeout' instead~n", []),
@@ -495,6 +562,36 @@ wait_valid(Cnt,Max) ->
             timer:sleep(500*(Max-Cnt+1)),
             wait_valid(Cnt-1,Max);
         {_      , Err} -> {error, Err}
+    end.
+
+% wait_finalized(X).
+%
+% Loops X time on order being finalized
+% (waits incrementing time between each trial).
+%
+% returns:
+%   - {error, timeout} if failed after X loops
+%   - {error, Err} if another error
+%   - {'ok', Response} if succeed
+%
+-spec wait_finalized(atom(), 0..10) -> {ok, map()}|{error, timeout|any()}.
+wait_finalized(Status, X) ->
+    wait_finalized(Status,X,X).
+
+-spec wait_finalized(atom(), 0..10, 0..10) -> {ok, map()}|{error, timeout|any()}.
+wait_finalized(_, 0,_) ->
+    {error, timeout};
+wait_finalized(Status, Cnt,Max) ->
+    case gen_fsm:sync_send_event({global, ?MODULE}, Status, 15000) of
+        {ok, Res}   -> {ok, Res};
+        valid ->
+            timer:sleep(500*(Max-Cnt+1)),
+            wait_finalized(valid, Cnt-1,Max);
+        processing  ->
+            timer:sleep(500*(Max-Cnt+1)),
+            wait_finalized(processing, Cnt-1,Max);
+        {_      , Err} -> {error, Err};
+        Any -> Any
     end.
 
 % authz(ChallenteType, AuthzUris, State).
