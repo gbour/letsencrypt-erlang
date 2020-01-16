@@ -106,11 +106,38 @@ main([Domain]) ->
 
 	% we want 'finalize' value
 	io:format("finalizing: sending csr~n"),
-	{ok, FinOrder, _, Nonce7} = letsencrypt_api:finalize(Order, Csr, Key,
-														 Jws2#{nonce => Nonce6}, Opts),
+
+	%
+	% fsm
+	%	authorization :: status=valid -> order :: status=ready (loop) until ->
+	%
+	%	finalize(CSR) :: status=processing -> order (loop until) status=ready ->
+	%	                 status=ready      -> returns order object            ->
+	%
+	%   certificate
+
+	% returns  status processing
+	% status 'ready'
+	% order MUST be ready before finalizing
+	{ok, _, _, Nonce42} = letsencrypt_api:order(OrderLocation, Key, Jws2#{nonce =>
+																		 Nonce6}, Opts),
+
+	% status 'processing'
+	% finalize may returns either 'processing' or 'ready'
+	{ok, _, _, Nonce7} = letsencrypt_api:finalize(Order, Csr, Key,
+														 Jws2#{nonce => Nonce42}, Opts),
+
+	% status 'ready'
+	% order includes 'certificate' link
+	{ok, FinOrder, _, Nonce8} = letsencrypt_api:order(OrderLocation, Key, Jws2#{nonce =>
+																		 Nonce7}, Opts),
+
+	%timer:sleep(5000),
+	%{ok, FinOrder, _, Nonce9} = letsencrypt_api:finalize(Order, Csr, Key,
+	%													 Jws2#{nonce => Nonce8}, Opts),
 
 	% download certificate
-	{ok, Cert} = letsencrypt_api:certificate(FinOrder, Key, Jws2#{nonce => Nonce7}, Opts),
+	{ok, Cert} = letsencrypt_api:certificate(FinOrder, Key, Jws2#{nonce => Nonce8}, Opts),
 	io:format("cert= ~p~n", [Cert]),
 	{ok, Fd2} = file:open(CertPath++"/"++Domain++".crt", [raw, write, binary]),
 	file:write(Fd2, Cert),
