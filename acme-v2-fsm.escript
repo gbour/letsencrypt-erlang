@@ -12,10 +12,10 @@ main([IMode, Domain]) ->
 	CertPath = "/tmp/le/certs",
 	WwwPath = "/tmp/le/webroot",
 	letsencrypt:start([{mode, Mode}, staging, {cert_path, CertPath},
-					   {port, 8099}]),
-	letsencrypt:make_cert(letsencrypt_utils:bin(Domain), #{}),
+	                   {webroot_path, WwwPath}, {port, 8099}]),
+	Ret = letsencrypt:make_cert(letsencrypt_utils:bin(Domain), #{async => false}),
 
-	io:format("DONE"),
+	io:format("DONE: ~p~n", [Ret]),
 	ok.
 
 include_libs() ->
