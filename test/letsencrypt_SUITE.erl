@@ -76,6 +76,9 @@ init_per_suite(Config) ->
     application:ensure_all_started(letsencrypt),
     [{opts, #{}}].
 
+end_per_suite(Config) ->
+	application:stop(letsencrypt),
+	ok.
 
 setopt(Config, Kv) ->
     Opts = proplists:get_value(opts, Config),
