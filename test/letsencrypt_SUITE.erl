@@ -210,8 +210,8 @@ certificate_validation(CertFile, Domain, SAN) ->
     SAN2 = [ erlang:binary_to_list(X) || X <- [Domain|SAN] ],
     match(exten(Exts, ?'id-ce-subjectAltName'), SAN2, "wrong SAN (~p =:= ~p)"),
 
-    % certificate validity = 90 days
-    match(add_days(to_date(Start), 90), to_date(End), "wrong certificate validity (~p =:= ~p)"),
+    % certificate validity = 5 years
+    match(add_years(to_date(Start), 5), to_date(End), "wrong certificate validity (~p =:= ~p)"),
 
     ok.
 
@@ -253,6 +253,9 @@ add_days({Date,Time}, Days) ->
             calendar:date_to_gregorian_days(Date) + Days),
         Time
     }.
+
+add_years({{Year,Month,Days}, Time}, Years) ->
+	{{Year+Years,Month,Days}, Time}.
 
 match(X, Y, Msg) ->
     case X =:= Y of
