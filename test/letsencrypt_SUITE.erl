@@ -1,4 +1,4 @@
-%% Copyright 2015-2016 Guillaume Bour
+%% Copyright 2015-2020 Guillaume Bour
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -25,8 +25,7 @@
 
 -define(HOSTNAME, <<"le.wtf">>).
 -define(HOSTNAME2, <<"le2.wtf">>).
-%-define(FAKE_CA, "happy hacker fake CA").
--define(FAKE_CA, "h2ppy h2cker fake CA").
+-define(FAKE_CA, "Pebble Intermediate CA 60eec7").
 
 generate_groups([], Tests) ->
     Tests;
@@ -202,7 +201,7 @@ certificate_validation(CertFile, Domain, SAN) ->
             to_date(Start), to_date(End), exten(Exts, ?'id-ce-subjectAltName')]),
 
     % performing match tests
-    match(rdnSeq(Issuer , ?'id-at-commonName'), ?FAKE_CA, "wrong issuer (~p =:= ~p)"),
+    startswith(rdnSeq(Issuer , ?'id-at-commonName'), ?FAKE_CA, "wrong issuer (~p =:= ~p)"),
     match(rdnSeq(Subject, ?'id-at-commonName'), erlang:binary_to_list(Domain), "wrong CN (~p =:= ~p)"),
 
     SAN2 = [ erlang:binary_to_list(X) || X <- [Domain|SAN] ],
@@ -261,3 +260,11 @@ match(X, Y, Msg) ->
         _ -> true
     end.
 
+startswith(X, Y, Msg) ->
+	case string:slice(X, 0, string:len(Y)) of
+		false ->
+            ?DEBUG(Msg, [X,Y]),
+            throw({'match-exception', lists:flatten(io_lib:format(Msg, [X,Y]))});
+
+        _ -> true
+	end.
