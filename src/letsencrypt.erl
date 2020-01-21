@@ -266,7 +266,7 @@ idle({create, Domain, _Opts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
     %Nonce2    = letsencrypt_api:new_reg(Conn, BasePath, Key, JWS#{nonce => Nonce}),
     %AuthzResp = authz([Domain|SANs], ChallengeType, State#state{conn=Conn, nonce=Nonce2}),
     AuthUris = maps:get(<<"authorizations">>, Order),
-    AuthzResp = authz(ChallengeType, AuthUris, State#state{jws=Jws2, account_key=AccntKey, nonce=Nonce3}),
+    AuthzResp = authz(ChallengeType, AuthUris, State#state{domain=Domain, jws=Jws2, account_key=AccntKey, nonce=Nonce3}),
 	io:format("authz resp: ~p~n", [AuthzResp]),
     {StateName, Reply, Challenges, Nonce5} = case AuthzResp of
             {error, Err, Nonce3} ->
@@ -692,16 +692,30 @@ challenge_init(webroot, #state{webroot_path=WPath, account_key=AccntKey}, 'http-
     );
 challenge_init(slave, _, _, _) ->
     ok;
-challenge_init(standalone, #state{port=Port}, ChallengeType, _Challenges) ->
-    %io:format("challenge type: ~p~n", [ChallengeType]),
+challenge_init(standalone, #state{port=Port, domain=Domain, account_key=AccntKey}, ChallengeType, Challenges) ->
+    %io:format("init standalone challenge for ~p~n", [ChallengeType]),
     {ok, _} = case ChallengeType of
         'http-01' ->
+			% elli webserver callback args is:
+			% #{Domain => #{
+			%     Token => Thumbprint,
+			%     ...
+			% }}
+			%
+			Thumbprints = maps:from_list(lists:map(
+				fun(#{<<"token">> := Token}) ->
+					{Token, letsencrypt_jws:keyauth(AccntKey, Token)}
+				end, maps:values(Challenges)
+			)),
             elli:start_link([
                 {name    , {local, letsencrypt_elli_listener}},
                 {callback, letsencrypt_elli_handler},
+				{callback_args, [#{Domain => Thumbprints}]},
                 {port    , Port}
-            ])
+            ]);
 
+		_ ->
+			io:format("standalone mode: unknown ~p challenge type~n", [ChallengeType])
 		% TODO
         %'tls-sni-01' ->
     end,
