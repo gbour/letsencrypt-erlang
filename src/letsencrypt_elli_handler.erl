@@ -1,4 +1,4 @@
-%% Copyright 2015-2016 Guillaume Bour
+%% Copyright 2015-2020 Guillaume Bour
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -19,20 +19,19 @@
 -export([handle/2, handle_event/3]).
 
 
-handle(Req, _Args) ->
-    %io:format("Elli: ~p~n~p~n", [Req, _Args]),
-    handle(elli_request:method(Req), elli_request:path(Req), Req).
+handle(Req, Args) ->
+    %io:format("Elli: ~p~n~p~n", [Req, Args]),
+    handle(elli_request:method(Req), elli_request:path(Req), Req, Args).
 
 
-handle('GET', [<<".well-known">>, <<"acme-challenge">>, Token], Req) ->
+handle('GET', [<<".well-known">>, <<"acme-challenge">>, Token], Req, [Thumbprints]) ->
     %NOTE: when testing on travis with local boulder instance, Host header may contain port number
     %      I dunno if it can happens againts production boulder, but this line filters it out
     [Host|_]   = binary:split(elli_request:get_header(<<"Host">>, Req, <<>>), <<":">>),
-    Challenges = letsencrypt:get_challenge(),
-    %io:format("ELLI: host= ~p, challenges= ~p~n", [Host, Challenges]),
+    %io:format("ELLI: host= ~p~n", [Host]),
 
-    case maps:get(Host, Challenges, undefined) of
-        #{token := Token, thumbprint := Thumbprint} ->
+    case maps:get(Host, Thumbprints, undefined) of
+        #{Token := Thumbprint} ->
             %io:format("match: ~p -> ~p~n", [Token, Thumbprint]),
             {200, [{<<"Content-Type">>, <<"text/plain">>}], Thumbprint};
 
