@@ -12,7 +12,7 @@ main([IMode, Domain]) ->
 	CertPath = "/tmp/le/certs",
 	WwwPath = "/tmp/le/webroot",
 	letsencrypt:start([{mode, Mode}, staging, {cert_path, CertPath},
-	                   {webroot_path, WwwPath}, {port, 8099}]),
+	                   {webroot_path, WwwPath}, {port, 5002}]),
 
 	case Mode of
 		slave ->
