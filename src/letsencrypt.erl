@@ -194,11 +194,11 @@ make_cert_bg(Domain, Opts=#{async := Async}) ->
 
 % get_challenge().
 %
-% Returns ongoing challenges.
+% Returns ongoing challenges with pre-computed thumbprints.
 %
 % returns:
+%   #{Challenge => Thumbrint} if ok,
 %	'error' if fails
-%	Challenges else
 %
 -spec get_challenge() -> error|map().
 get_challenge() ->
@@ -277,7 +277,7 @@ idle({create, Domain, _Opts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
     end,
 
     {reply, Reply, StateName, 
-     State#state{domain=Domain, jws=Jws2, nonce=Nonce5, order=Order2, challenges=Challenges, sans=[]}}.
+     State#state{domain=Domain, jws=Jws2, nonce=Nonce5, order=Order2, challenges=Challenges, sans=[], account_key=AccntKey}}.
 
 
 % state 'pending'
@@ -286,10 +286,20 @@ idle({create, Domain, _Opts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
 %
 % pending(get_challenge).
 %
-% Returns list of challenges currently on-the-go.
+% Returns list of challenges currently on-the-go with pre-computed thumbprints.
 %
-pending(get_challenge, _, State=#state{challenges=Challenges}) ->
-	{reply, Challenges, pending, State};
+pending(get_challenge, _, State=#state{account_key=AccntKey, challenges=Challenges}) ->
+	% #{Domain => #{
+	%     Token => Thumbprint,
+	%     ...
+	% }}
+	%
+	Thumbprints = maps:from_list(lists:map(
+		fun(#{<<"token">> := Token}) ->
+			{Token, letsencrypt_jws:keyauth(AccntKey, Token)}
+		end, maps:values(Challenges)
+	)),
+	{reply, Thumbprints, pending, State};
 
 % pending(check).
 %
