@@ -116,7 +116,7 @@ test_slave(Config) ->
     %cowboy:stop_listener(my_http_listener),
     elli:start_link([
         {name    , {local, my_test_slave_listener}},
-        {callback, letsencrypt_elli_handler},
+        {callback, test_slave_handler},
         {port    , Port}
     ]),
 
