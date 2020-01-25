@@ -40,14 +40,14 @@ groups() ->
     Matrix = [
         ['dft-challenge', 'http-01']    % challenge type
         ,['dft-sync', 'async', 'sync']  % sync/async
-        ,[unidomain, san]               % san or not
+        ,[unidomain] %,[unidomain, san]               % san or not
     ],
 
     Groups = generate_groups(Matrix, Tests),
     io:format("groups = ~p~n", [Groups]),
     [
         {matrix, [], Groups}
-        ,{'tls-sni-01', [], [test_standalone]}
+        %,{'tls-sni-01', [], [test_standalone]}
     ].
 
 %        {simple, [], [
@@ -67,8 +67,8 @@ groups() ->
 
 all() ->
     [
-        {group, matrix},
-        {group, 'tls-sni-01'}
+        {group, matrix}
+        %,{group, 'tls-sni-01'}
     ].
 
 
