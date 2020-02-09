@@ -54,11 +54,19 @@ cert_request(Domain, CertsPath, SANs) ->
     {ok, CertFile} = mkcert(request, Domain, CertFile, KeyFile, SANs),
     io:format("CSR ~p~n", [CertFile]),
 
-    {ok, RawCsr} = file:read_file(CertFile),
-    [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
+    case file:read_file(CertFile) of
+        {ok, RawCsr} ->
+            [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
 
-    io:format("csr= ~p~n", [Csr]),
-    letsencrypt_utils:b64encode(Csr).
+            io:format("csr= ~p~n", [Csr]),
+            letsencrypt_utils:b64encode(Csr);
+        {error, enoent} ->
+            io:format("cert_request: cert file ~p not found~n", [CertFile]),
+            throw(file_not_found);
+        {error, Err} ->
+            io:format("cert_request: unknown error ~p~n", [Err]),
+            throw(unknown_error)
+    end.
 
 
 % create temporary (1 day) certificate with subjectAlternativeName
