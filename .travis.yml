@@ -37,7 +37,7 @@ before_install:
 
 install:
     - ./rebar3 update
-    - DEBUG=1 ./rebar3 compile
+    - DEBUG=1 ./rebar3 as test compile
 
 before_script:
     - docker-compose -f docker-compose.yml up > /tmp/pebble.log&
