@@ -32,6 +32,8 @@ env:
 
 before_install:
     - wget https://raw.githubusercontent.com/letsencrypt/pebble/master/docker-compose.yml
+    # disable invalid anti-replay nonce random errors
+    - "sed -ie 's/\(GODEBUG:.*\)/\1\n      PEBBLE_WFE_NONCEREJECT: 0/' docker-compose.yml"
 
 install:
     - ./rebar3 update
