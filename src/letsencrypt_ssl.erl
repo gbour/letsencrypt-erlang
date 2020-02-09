@@ -61,11 +61,11 @@ cert_request(Domain, CertsPath, SANs) ->
             io:format("csr= ~p~n", [Csr]),
             letsencrypt_utils:b64encode(Csr);
         {error, enoent} ->
-            io:format("cert_request: cert file ~p not found~n", [CertFile]),
-            throw(file_not_found);
+            io:format("cert_request: cert file ~p not found~n", [CertFile]);
+            %throw(file_not_found);
         {error, Err} ->
-            io:format("cert_request: unknown error ~p~n", [Err]),
-            throw(unknown_error)
+            io:format("cert_request: unknown error ~p~n", [Err])
+            %throw(unknown_error)
     end.
 
 
