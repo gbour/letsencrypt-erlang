@@ -74,11 +74,11 @@ script:
     - DEBUG=1 ./rebar3 ct > /tmp/ct.log 2>&1
 #
 after_failure:
-#    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
-#    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/letsencrypt_suite.test_*
-#    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/unexpected_io.log.html
     - cat /tmp/pebble.log
     - cat /tmp/ct.log
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/letsencrypt_suite.test_*
+    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/unexpected_io.log.html
 #
 after_success:
 #    - elinks -dump 1 _build/test/logs/ct_run.*/*/run.*/suite.log.html
