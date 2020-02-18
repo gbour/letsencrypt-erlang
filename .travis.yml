@@ -1,9 +1,5 @@
 os: linux
-dist: trusty
-
-language: erlang
-otp_release:
-    - 22.2
+dist: bionic
 
 services:
     - docker
@@ -19,18 +15,18 @@ env:
         - GOPATH=/tmp/go
         - PATH=$GOPATH/bin:$PATH
 
-    #matrix:
-        #- BOULDER_BUILD=https://acme-v01.api.letsencrypt.org/build
-        #- BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
-
-# we only test boulder staging version against last OTP version
-#matrix:
-#    include:
-#        - otp_release: 18.2.1
-#          env: BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
-
+cache:
+    directories:
+        - $HOME/.kerl
 
 before_install:
+    # install erlang/otp
+    - curl -O https://raw.githubusercontent.com/kerl/kerl/master/kerl
+    - chmod a+x kerl
+    - travis_wait 30 ./kerl build 22.2
+    - ./kerl install 22.2 ~/.kerl/22.2
+    - . ~/.kerl/22.2/activate
+    # get pebble docker-compose configuration
     - wget https://raw.githubusercontent.com/letsencrypt/pebble/master/docker-compose.yml
     # disable invalid anti-replay nonce random errors
     - "sed -ie 's/\\(GODEBUG:.*\\)/\\1\\n      PEBBLE_WFE_NONCEREJECT: 0/' docker-compose.yml"
