@@ -40,7 +40,7 @@ install:
     - DEBUG=1 ./rebar3 as test compile
 
 before_script:
-    - apt update
+    #- apt update
     - apt policy openssl
     - docker-compose -f docker-compose.yml up > /tmp/pebble.log&
     - sleep 10
