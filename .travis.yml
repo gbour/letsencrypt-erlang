@@ -40,6 +40,8 @@ install:
     - DEBUG=1 ./rebar3 as test compile
 
 before_script:
+    - apt update
+    - apt policy openssl
     - docker-compose -f docker-compose.yml up > /tmp/pebble.log&
     - sleep 10
     - curl --request POST --data '{"ip":"10.30.50.1"}' http://localhost:8055/set-default-ipv4
