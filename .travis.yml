@@ -1,5 +1,5 @@
 os: linux
-dist: trusty
+dist: bionic
 
 language: erlang
 otp_release:
