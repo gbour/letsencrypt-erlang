@@ -28,7 +28,7 @@ env:
 #    include:
 #        - otp_release: 18.2.1
 #          env: BOULDER_BUILD=https://acme-staging.api.letsencrypt.org/build
-cache
+cache:
     directories:
         - $HOME/.kerl
 
