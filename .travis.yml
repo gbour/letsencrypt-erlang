@@ -1,9 +1,9 @@
 os: linux
 dist: bionic
 
-language: erlang
-otp_release:
-    - 22.2
+#language: erlang
+#otp_release:
+#    - 22.2
 
 services:
     - docker
