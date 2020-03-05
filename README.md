@@ -8,10 +8,11 @@ Let's Encrypt client library for Erlang
 
 Features:
 
+- [x] ACME v2
 - [ ] registering client (with email)
 - [x] issuing RSA certificate
 - [ ] revoking certificate
-- [x] SAN certificate (supplementary domain names)
+- [~] SAN certificate (supplementary domain names)
 - [ ] allow EC keys
 - [ ] choose RSA key length
 - [x] unittests
@@ -24,13 +25,12 @@ Modes
 
 Validation challenges
 - [x] http-01 (http)
-- [x] tls-sni-01 (https) (*standalone* mode only)
 - [ ] dns-01
 - [ ] proof-of-possession-01
 
 ## Prerequisites
-- openssl (required to generate RSA key and certificate request)
-- erlang OTP >= 17.5
+- openssl >= 1.1.1 (required to generate RSA key and certificate request)
+- erlang OTP (tested with 22.2 version, probably works with older versions as well)
 
 ## Building
 
@@ -96,8 +96,9 @@ Params is a list of parameters, choose from the followings:
     **standalone**
   * **{cert_path, Path}**: pinpoint path to store generated certificates.
     Must be writable by erlang process
-  * **{connect_timeout, Timeout}** (integer, optional, default to 30000): network connection timeout
+  * **{http_timeout, Timeout}** (integer, optional, default to 30000): http queries timeout
     (in milliseconds)  
+  * **{connect_timeout, Timeout}** is **deprecated**, replaced by **http_timeout**
 
   
   Mode-specific parameters:
@@ -106,7 +107,8 @@ Params is a list of parameters, choose from the followings:
       Must be writable by erlang process, and available through your webserver as root path
 
   * _standalone_ mode:
-    * **{port, Port}** (optional, default to *80*): tcp port to listen for http query for challenge validation
+    * **{port, Port}** (optional, default to *80*): tcp port to listen for http query for
+      challenge validation
 
   returns:
     * **{ok, Pid}** with Pid the server process pid
@@ -117,8 +119,9 @@ Params is a list of parameters, choose from the followings:
     * **async** = true|false (optional, _true_ by default): 
     * **callback** (optional, used only when _async=true_): function called once certificate has been
       generated.
-    * **san** (list(binary), optional): supplementary domain names added to the certificate
-    * **challenge** (optional): 'http-01' (default) or 'tls-sni-01'
+    * **san** (list(binary), optional): supplementary domain names added to the certificate. 
+      **san is not available currently, will be reimplemented soon**.
+    * **challenge** (optional): 'http-01' (default)
 
   returns:
     * in asynchronous mode, function returns **async**
@@ -158,7 +161,7 @@ Params is a list of parameters, choose from the followings:
     completed: ok (result= #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>})
   ```
 
-    * SAN
+    * SAN (**not available currently**)
   ```erlang
     > letsencrypt:make_cert(<<"example.com">>, #{async => false, san => [<<"www.example.com">>]}).
     {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
@@ -170,11 +173,6 @@ Params is a list of parameters, choose from the followings:
     {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
   ```
 
-    * **'tls-sni-01'** challenge
-  ```erlang
-    > letsencrypt:make_cert(<<"example.com">>, #{async => false, challenge => 'tls-sni-01'}).
-    {ok, #{cert => <<"/path/to/cert">>, key => <<"/path/to/key">>}}
-  ```
 
 ## Action modes
 
@@ -240,11 +238,11 @@ init(_, Req, []) ->
     %   - cowboy_req:binding() returns undefined is token not set in URI
     %   - letsencrypt:get_challenge() returns 'error' if token+thumbprint are not available
     %
-    Challenges = letsencrypt:get_challenge(),
-    {Token,_}  = cowboy_req:binding(token, Req),
+    Thumbprints = letsencrypt:get_challenge(),
+    {Token,_}   = cowboy_req:binding(token, Req),
 
-    {ok, Req2} = case maps:get(Host, Challenges, undefined) of
-        #{token := Token, thumbprint := Thumbprint} ->
+    {ok, Req2} = case maps:get(Token, Thumprints, undefined) of
+        Thumbprint ->
             cowboy_req:reply(200, [{<<"content-type">>, <<"text/plain">>}], Thumbprint, Req);
 
         _X     ->
@@ -275,21 +273,6 @@ on_complete({State, Data}) ->
 main() ->
     letsencrypt:start([{mode,standalone}, staging, {cert_path,"/path/to/certs"}, {port, 80)]),
     letsencrypt:make_cert(<<"mydomain.tld">>, #{callback => fun on_complete/1}),
-
-    ok.
-```
-
-You can choose to use **'tls-sni-01'** challenge instead of default **'http-01'**. Thus connection from
-letsencrypt server will be made on https port (443)
-
-```erlang
-
-on_complete({State, Data}) ->
-    io:format("letsencrypt certificate issued: ~p (data: ~p)~n", [State, Data]).
-
-main() ->
-    letsencrypt:start([{mode,standalone}, staging, {cert_path,"/path/to/certs"}, {port, 443)]),
-    letsencrypt:make_cert(<<"mydomain.tld">>, #{challenge => 'tls-sni-01', callback => fun on_complete/1}),
 
     ok.
 ```

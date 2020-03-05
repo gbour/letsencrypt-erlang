@@ -1,4 +1,4 @@
-%% Copyright 2015-2016 Guillaume Bour
+%% Copyright 2015-2020 Guillaume Bour
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -25,8 +25,7 @@
 
 -define(HOSTNAME, <<"le.wtf">>).
 -define(HOSTNAME2, <<"le2.wtf">>).
-%-define(FAKE_CA, "happy hacker fake CA").
--define(FAKE_CA, "h2ppy h2cker fake CA").
+-define(FAKE_CA, "Pebble Intermediate CA 60eec7").
 
 generate_groups([], Tests) ->
     Tests;
@@ -41,14 +40,14 @@ groups() ->
     Matrix = [
         ['dft-challenge', 'http-01']    % challenge type
         ,['dft-sync', 'async', 'sync']  % sync/async
-        ,[unidomain, san]               % san or not
+        ,[unidomain] %,[unidomain, san]               % san or not
     ],
 
     Groups = generate_groups(Matrix, Tests),
     io:format("groups = ~p~n", [Groups]),
     [
         {matrix, [], Groups}
-        ,{'tls-sni-01', [], [test_standalone]}
+        %,{'tls-sni-01', [], [test_standalone]}
     ].
 
 %        {simple, [], [
@@ -68,8 +67,8 @@ groups() ->
 
 all() ->
     [
-        {group, matrix},
-        {group, 'tls-sni-01'}
+        {group, matrix}
+        %,{group, 'tls-sni-01'}
     ].
 
 
@@ -77,6 +76,9 @@ init_per_suite(Config) ->
     application:ensure_all_started(letsencrypt),
     [{opts, #{}}].
 
+end_per_suite(Config) ->
+	application:stop(letsencrypt),
+	ok.
 
 setopt(Config, Kv) ->
     Opts = proplists:get_value(opts, Config),
@@ -114,7 +116,7 @@ test_slave(Config) ->
     %cowboy:stop_listener(my_http_listener),
     elli:start_link([
         {name    , {local, my_test_slave_listener}},
-        {callback, letsencrypt_elli_handler},
+        {callback, test_slave_handler},
         {port    , Port}
     ]),
 
@@ -202,14 +204,14 @@ certificate_validation(CertFile, Domain, SAN) ->
             to_date(Start), to_date(End), exten(Exts, ?'id-ce-subjectAltName')]),
 
     % performing match tests
-    match(rdnSeq(Issuer , ?'id-at-commonName'), ?FAKE_CA, "wrong issuer (~p =:= ~p)"),
+    startswith(rdnSeq(Issuer , ?'id-at-commonName'), ?FAKE_CA, "wrong issuer (~p =:= ~p)"),
     match(rdnSeq(Subject, ?'id-at-commonName'), erlang:binary_to_list(Domain), "wrong CN (~p =:= ~p)"),
 
     SAN2 = [ erlang:binary_to_list(X) || X <- [Domain|SAN] ],
     match(exten(Exts, ?'id-ce-subjectAltName'), SAN2, "wrong SAN (~p =:= ~p)"),
 
-    % certificate validity = 90 days
-    match(add_days(to_date(Start), 90), to_date(End), "wrong certificate validity (~p =:= ~p)"),
+    % certificate validity = 5 years
+    match(add_years(to_date(Start), 5), to_date(End), "wrong certificate validity (~p =:= ~p)"),
 
     ok.
 
@@ -252,6 +254,9 @@ add_days({Date,Time}, Days) ->
         Time
     }.
 
+add_years({{Year,Month,Days}, Time}, Years) ->
+	{{Year+Years,Month,Days}, Time}.
+
 match(X, Y, Msg) ->
     case X =:= Y of
         false ->
@@ -261,3 +266,11 @@ match(X, Y, Msg) ->
         _ -> true
     end.
 
+startswith(X, Y, Msg) ->
+	case string:slice(X, 0, string:len(Y)) of
+		false ->
+            ?DEBUG(Msg, [X,Y]),
+            throw({'match-exception', lists:flatten(io_lib:format(Msg, [X,Y]))});
+
+        _ -> true
+	end.

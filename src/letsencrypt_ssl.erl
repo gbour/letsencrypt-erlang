@@ -1,4 +1,4 @@
-%% Copyright 2015-2016 Guillaume Bour
+%% Copyright 2015-2020 Guillaume Bour
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 -module(letsencrypt_ssl).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([private_key/2, cert_request/3, cert_autosigned/3, certificate/4]).
+-export([private_key/2, cert_request/3, cert_autosigned/3, certificate/3]).
 
 -include_lib("public_key/include/public_key.hrl").
 -import(letsencrypt_utils, [bin/1]).
@@ -52,13 +52,21 @@ cert_request(Domain, CertsPath, SANs) ->
     KeyFile  = CertsPath ++ "/" ++ Domain ++ ".key",
     CertFile = CertsPath ++ "/" ++ Domain ++ ".csr",
     {ok, CertFile} = mkcert(request, Domain, CertFile, KeyFile, SANs),
-    %io:format("CSR ~p~n", [CertFile]),
+    io:format("CSR ~p~n", [CertFile]),
 
-    {ok, RawCsr} = file:read_file(CertFile),
-    [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
+    case file:read_file(CertFile) of
+        {ok, RawCsr} ->
+            [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
 
-    %io:format("csr= ~p~n", [Csr]),
-    letsencrypt_utils:b64encode(Csr).
+            io:format("csr= ~p~n", [Csr]),
+            letsencrypt_utils:b64encode(Csr);
+        {error, enoent} ->
+            io:format("cert_request: cert file ~p not found~n", [CertFile]),
+            throw(file_not_found);
+        {error, Err} ->
+            io:format("cert_request: unknown error ~p~n", [Err]),
+            throw(unknown_error)
+    end.
 
 
 % create temporary (1 day) certificate with subjectAlternativeName
@@ -66,61 +74,27 @@ cert_request(Domain, CertsPath, SANs) ->
 -spec cert_autosigned(string(), string(), list(string())) -> {ok, string()}.
 cert_autosigned(Domain, KeyFile, SANs) ->
     CertFile = "/tmp/"++Domain++"-tlssni-autosigned.pem",
-    mkcert(autosigned, Domain, CertFile, KeyFile, SANs).
+    mkcert(request, Domain, CertFile, KeyFile, SANs).
 
 
 -spec mkcert(request|autosigned, string(), string(), string(), list(string())) -> {ok, string()}.
-mkcert(request, Domain, OutName, Keyfile, []) ->
-%    CertFile = CertsPath++"/"++Domain++".csr",
-    Cmd = io_lib:format("openssl req -new -key '~s' -subj '/CN=~s' -out '~s'", [Keyfile, Domain, OutName]),
-    _R  = os:cmd(Cmd),
-    %io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _R]),
+mkcert(request, Domain, OutName, Keyfile, SANs) ->
+    AltNames = lists:foldl(fun(San, Acc) ->
+        <<Acc/binary, ", DNS:", San/binary>>
+    end, <<"subjectAltName=DNS:", (bin(Domain))/binary>>, SANs),
+    Cmd = io_lib:format("openssl req -new -key '~s' -out '~s' -subj '/CN=~s' -addext '~s'",
+                        [Keyfile, OutName, Domain, AltNames]),
 
-    {ok, OutName};
-mkcert(Type, Domain, OutName, Keyfile, SANs) ->
-    %io:format("USE SANS~n"),
-    <<$,, SANEntry/binary>> = lists:foldl(fun(X, Acc) -> <<Acc/binary, ",DNS:", X/binary>> end, <<>>, SANs),
-
-    {ok, File} = file:read_file("/etc/ssl/openssl.cnf"),
-    File2 = <<File/binary, "\n[SAN]\nsubjectAltName=DNS:", (bin(Domain))/binary,$,, SANEntry/binary>>,
-    ConfFile = <<"/tmp/letsencrypt_san_openssl.cnf">>,
-    file:write_file(ConfFile, File2),
-
-    Cmd = io_lib:format(
-        "openssl req -new -key '~s' -out '~s' -subj '/CN=~s' -config '~s'", 
-        [Keyfile, OutName, Domain, ConfFile]),
-    Cmd1 = case Type of
-        request    -> [Cmd | " -reqexts SAN" ];
-        autosigned -> [Cmd | " -extensions SAN -x509 -sha256 -days 1" ]
-    end,
-
-    _Status  = os:cmd(Cmd1),
-    %io:format("mkcert(~p): ~p => ~p~n", [Type, lists:flatten(Cmd1), _Status]),
-
-    file:delete(ConfFile),
+    _Status  = os:cmd(Cmd),
+    io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _Status]),
     {ok, OutName}.
 
-
--spec certificate(string(), binary(), binary(), string()) -> string().
-certificate(Domain, DomainCert, IntermediateCert, CertsPath) ->
+% domain certificate only
+certificate(Domain, DomainCert, CertsPath) ->
     FileName = CertsPath++"/"++Domain++".crt",
     %io:format("domain cert: ~p~nintermediate: ~p~n", [DomainCert, IntermediateCert]),
     %io:format("writing final certificate to ~p~n", [FileName]),
 
-    file:write_file(FileName, <<(pem_format(DomainCert))/binary, $\n, IntermediateCert/binary>>),
+    file:write_file(FileName, DomainCert),
     FileName.
 
-
--spec pem_format(binary()) -> binary().
-pem_format(Cert) ->
-    <<"-----BEGIN CERTIFICATE-----\n",
-      (pem_format(base64:encode(Cert), <<>>))/binary, $\n,
-      "-----END CERTIFICATE-----">>.
-
--spec pem_format(binary(), binary()) -> binary().
-pem_format(<<>>, <<$\n, Fmt/binary>>) ->
-    Fmt;
-pem_format(<<Head:64/binary, Rest/binary>>, Fmt)  ->
-    pem_format(Rest, <<Fmt/binary, $\n, Head/binary>>);
-pem_format(Rest, Fmt)  ->
-    pem_format(<<>>, <<Fmt/binary, $\n, Rest/binary>>).

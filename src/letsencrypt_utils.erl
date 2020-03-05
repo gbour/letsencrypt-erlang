@@ -1,4 +1,4 @@
-%% Copyright 2015-2016 Guillaume Bour
+%% Copyright 2015-2020 Guillaume Bour
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -59,6 +59,8 @@ str(X) when is_binary(X) ->
     binary_to_list(X);
 str(X) when is_integer(X) ->
     integer_to_list(X);
+str(X) when is_list(X) ->
+	X;
 str(_X) ->
     throw(invalid).
 

@@ -1,4 +1,4 @@
-%% Copyright 2015-2016 Guillaume Bour
+%% Copyright 2015-2020 Guillaume Bour
 %% 
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -15,8 +15,15 @@
 -module(letsencrypt_jws).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([init/1, encode/3, thumbprint/2]).
+-export([init/1, encode/3, keyauth/2]).
 
+
+% init(Key)
+%
+% Initialize a RSA JWS with given private key.
+%
+% returns:
+%	JWS
 -spec init(letsencrypt:ssl_privatekey()) -> letsencrypt:jws().
 init(#{b64 := {N,E}}) ->
     #{
@@ -29,33 +36,46 @@ init(#{b64 := {N,E}}) ->
         nonce => undefined
     }.
 
-
--spec encode(letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()) -> binary().
+% encode(Key, Jws, Payload)
+%
+% Build Jws body.
+% ref: https://www.rfc-editor.org/rfc/rfc8555.html#section-6.2
+%
+% returns:
+%	JwsBody
+%
+-spec encode(letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()|empty) -> binary().
 encode(#{raw := RSAKey}, Jws, Content) ->
-    %io:format("~p~n~p~n", [Jws, Content]),
     Protected = letsencrypt_utils:b64encode(jiffy:encode(Jws)),
-    Payload   = letsencrypt_utils:b64encode(jiffy:encode(Content)),
+	Payload = case Content of
+		% for POST-as-GET queries, payload is just an empty string
+		empty -> <<"">>;
+		_     -> letsencrypt_utils:b64encode(jiffy:encode(Content))
+	end,
 
     Sign  = crypto:sign(rsa, sha256, <<Protected/binary, $., Payload/binary>>, RSAKey),
     Sign2 = letsencrypt_utils:b64encode(Sign),
 
     jiffy:encode({[
-        {header, {[]}},
+        %{header, {[]}},
         {protected, Protected},
         {payload  , Payload},
         {signature, Sign2}
     ]}).
 
-
--spec thumbprint(letsencrypt:ssl_privatekey(), binary()) -> binary().
-thumbprint(#{b64 := {N,E}}, Token) ->
-    % rfc7638 jwk thumbprint
-    %NOTE: json payload requires to be encoded in keys alphabetical order
-    Thumbprint = jiffy:encode({[
-        {e, E},
-        {kty, 'RSA'},
-        {n, N}
-    ]}, [force_utf8]),
+% keyauth(Key, Token)
+%
+% Build acme key authorization.
+% ref: https://www.rfc-editor.org/rfc/rfc8555.html#section-8.1
+%
+% returns:
+%	KeyAuthorization
+%
+keyauth(#{<<"e">> := E, <<"n">> := N, <<"kty">> := Kty}, Token) ->
+	Thumbprint = jiffy:encode({[
+		{e, E},
+		{kty, Kty},
+		{n, N}
+	]}, [force_utf8]),
 
     <<Token/binary, $., (letsencrypt_utils:b64encode(crypto:hash(sha256, Thumbprint)))/binary>>.
-
