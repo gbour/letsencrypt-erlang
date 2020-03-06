@@ -165,8 +165,6 @@ make_cert_bg(Domain, Opts=#{async := Async}) ->
             {error, Err};
 
         ok ->
-            io:format("ok: ~p~n", ["aa"]),
-
             case wait_valid(20) of
                 ok ->
                     Status = gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000),
@@ -267,7 +265,6 @@ idle({create, Domain, _Opts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
     %AuthzResp = authz([Domain|SANs], ChallengeType, State#state{conn=Conn, nonce=Nonce2}),
     AuthUris = maps:get(<<"authorizations">>, Order),
     AuthzResp = authz(ChallengeType, AuthUris, State#state{domain=Domain, jws=Jws2, account_key=AccntKey, nonce=Nonce3}),
-	io:format("authz resp: ~p~n", [AuthzResp]),
     {StateName, Reply, Challenges, Nonce5} = case AuthzResp of
             {error, Err, Nonce3} ->
                 {idle, {error, Err}, nil, Nonce3};
