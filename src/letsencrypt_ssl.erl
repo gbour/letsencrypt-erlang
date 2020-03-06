@@ -52,13 +52,13 @@ cert_request(Domain, CertsPath, SANs) ->
     KeyFile  = CertsPath ++ "/" ++ Domain ++ ".key",
     CertFile = CertsPath ++ "/" ++ Domain ++ ".csr",
     {ok, CertFile} = mkcert(request, Domain, CertFile, KeyFile, SANs),
-    io:format("CSR ~p~n", [CertFile]),
+    %io:format("CSR ~p~n", [CertFile]),
 
     case file:read_file(CertFile) of
         {ok, RawCsr} ->
             [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
 
-            io:format("csr= ~p~n", [Csr]),
+            %io:format("csr= ~p~n", [Csr]),
             letsencrypt_utils:b64encode(Csr);
         {error, enoent} ->
             io:format("cert_request: cert file ~p not found~n", [CertFile]),
@@ -86,7 +86,7 @@ mkcert(request, Domain, OutName, Keyfile, SANs) ->
                         [Keyfile, OutName, Domain, AltNames]),
 
     _Status  = os:cmd(Cmd),
-    io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _Status]),
+    %io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _Status]),
     {ok, OutName}.
 
 % domain certificate only
