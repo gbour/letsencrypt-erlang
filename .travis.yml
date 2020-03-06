@@ -23,8 +23,8 @@ before_install:
     # install erlang/otp
     - curl -O https://raw.githubusercontent.com/kerl/kerl/master/kerl
     - chmod a+x kerl
-    - travis_wait 30 ./kerl build 22.2
-    - ./kerl install 22.2 ~/.kerl/22.2
+    - travis_wait 30 ./kerl build 22.2 || true
+    - ./kerl install 22.2 ~/.kerl/22.2 || true
     - . ~/.kerl/22.2/activate
     # get pebble docker-compose configuration
     - wget https://raw.githubusercontent.com/letsencrypt/pebble/master/docker-compose.yml
