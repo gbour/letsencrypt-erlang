@@ -167,10 +167,10 @@ make_cert_bg(Domain, Opts=#{async := Async}) ->
         ok ->
             io:format("ok: ~p~n", ["aa"]),
 
-            case wait_valid(10) of
+            case wait_valid(20) of
                 ok ->
                     Status = gen_fsm:sync_send_event({global, ?MODULE}, finalize, 15000),
-					case wait_finalized(Status, 10) of
+					case wait_finalized(Status, 20) of
 						{ok, Res} -> {ok, Res};
 						Err -> Err
 					end;
