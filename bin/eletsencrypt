@@ -108,7 +108,7 @@ list([{Domain, [Opts]}|T], Conf=#{short := false, "renew_threshold" := Threshold
             Msg = if DiffDays < 0 ->
                     color:red(io_lib:format("[Certificate is expired since ~p days]", [-DiffDays]));
                 DiffDays < Threshold -> 
-                    color:orange(io_lib:format("[Certificate will expire in ~p days]", [DiffDays]));
+                    color:yellow(io_lib:format("[Certificate will expire in ~p days]", [DiffDays]));
                 true ->
                     color:green(io_lib:format("[Certificate will expire in ~p days]", [DiffDays]))
             end,
@@ -155,7 +155,7 @@ list([{Domain, [Opts]}|T], Conf=#{short := true, "renew_threshold" := Threshold}
         {ok, #{diff := DiffDays, issuer := Issuer}} -> 
 
             Status = if DiffDays < 0 -> color:red("E");
-                DiffDays < Threshold -> color:orange("N");
+                DiffDays < Threshold -> color:yellow("N");
                 true                 -> color:green("V")
             end,
             Issued = case list_to_binary(Issuer) of
