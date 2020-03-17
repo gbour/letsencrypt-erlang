@@ -51,7 +51,7 @@ private_key(KeyFile, _) ->
 cert_request(Domain, CertsPath, SANs) ->
     KeyFile  = CertsPath ++ "/" ++ Domain ++ ".key",
     CertFile = CertsPath ++ "/" ++ Domain ++ ".csr",
-    {ok, CertFile} = mkcert(request, Domain, CertFile, KeyFile, SANs),
+    {ok, CertFile} = mkcert(Domain, CertFile, KeyFile, SANs),
     %io:format("CSR ~p~n", [CertFile]),
 
     case file:read_file(CertFile) of
@@ -104,10 +104,6 @@ cert_autosigned(Domain, KeyFile, SANs) ->
 
 
 -spec mkcert(request|autosigned, string(), string(), string(), list(string())) -> {ok, string()}.
-mkcert(request, Domain, OutName, Keyfile, []) ->
-    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -subj '/CN=~s' -out '~s'", [Keyfile, Domain, OutName]),
-    _R  = os:cmd(Cmd),
-    {ok, OutName};
 mkcert(Type, Domain, OutName, Keyfile, SANs) ->
     Names = [ Domain | SANs ],
     NamesNr = lists:zip(Names, lists:seq(1,length(Names))),
@@ -124,7 +120,8 @@ mkcert(Type, Domain, OutName, Keyfile, SANs) ->
     ] ++ [
         [ "DNS.", integer_to_list(Nr), " = ", Name, "\n" ] || {Name, Nr} <- NamesNr
     ],
-    ConfFile = <<"/tmp/letsencrypt_san_openssl.",(iolist_to_binary(Domain))/binary ,".cnf">>,
+    ConfDir = filename:dirname(OutName),
+    ConfFile = filename:join(ConfDir, <<"letsencrypt_san_openssl.",(iolist_to_binary(Domain))/binary ,".cnf">>),
     ok = file:write_file(ConfFile, Cnf),
     Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -out '~s' -subj '/CN=~s' -config '~s'", 
                         [Keyfile, OutName, Domain, ConfFile]),
