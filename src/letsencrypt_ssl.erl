@@ -51,7 +51,7 @@ private_key(KeyFile, _) ->
 cert_request(Domain, CertsPath, SANs) ->
     KeyFile  = CertsPath ++ "/" ++ Domain ++ ".key",
     CertFile = CertsPath ++ "/" ++ Domain ++ ".csr",
-    {ok, CertFile} = mkcert(Domain, CertFile, KeyFile, SANs),
+    {ok, CertFile} = mkcert(request, Domain, CertFile, KeyFile, SANs),
     %io:format("CSR ~p~n", [CertFile]),
 
     case file:read_file(CertFile) of
