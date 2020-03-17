@@ -18,7 +18,7 @@
 -export([private_key/2, cert_request/3, cert_autosigned/3, certificate/3]).
 
 -include_lib("public_key/include/public_key.hrl").
--import(letsencrypt_utils, [bin/1]).
+% -import(letsencrypt_utils, [bin/1]).
 
 % create key
 -spec private_key(undefined|{new, string()}|string(), string()) -> letsencrypt:ssl_privatekey().
@@ -68,33 +68,71 @@ cert_request(Domain, CertsPath, SANs) ->
             throw(unknown_error)
     end.
 
+% % create temporary (1 day) certificate with subjectAlternativeName
+% % used for tls-sni-01 challenge
+% -spec cert_autosigned(string(), string(), list(string())) -> {ok, string()}.
+% cert_autosigned(Domain, KeyFile, SANs) ->
+%     CertFile = "/tmp/"++Domain++"-tlssni-autosigned.pem",
+%     mkcert(request, Domain, CertFile, KeyFile, SANs).
+
+
+% -spec mkcert(request|autosigned, string(), string(), string(), list(string())) -> {ok, string()}.
+% mkcert(request, Domain, OutName, Keyfile, SANs) ->
+%     AltNames = lists:foldl(fun(San, Acc) ->
+%         <<Acc/binary, ", DNS:", San/binary>>
+%     end, <<"subjectAltName=DNS:", (bin(Domain))/binary>>, SANs),
+%     Cmd = io_lib:format("openssl req -new -key '~s' -out '~s' -subj '/CN=~s' -addext '~s'",
+%                         [Keyfile, OutName, Domain, AltNames]),
+
+%     _Status  = os:cmd(Cmd),
+%     %io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _Status]),
+%     {ok, OutName}.
+
+% domain certificate only
+certificate(Domain, DomainCert, CertsPath) ->
+    FileName = CertsPath++"/"++Domain++".crt",
+    file:write_file(FileName, DomainCert),
+    FileName.
+
 
 % create temporary (1 day) certificate with subjectAlternativeName
 % used for tls-sni-01 challenge
 -spec cert_autosigned(string(), string(), list(string())) -> {ok, string()}.
 cert_autosigned(Domain, KeyFile, SANs) ->
     CertFile = "/tmp/"++Domain++"-tlssni-autosigned.pem",
-    mkcert(request, Domain, CertFile, KeyFile, SANs).
+    mkcert(autosigned, Domain, CertFile, KeyFile, SANs).
 
 
 -spec mkcert(request|autosigned, string(), string(), string(), list(string())) -> {ok, string()}.
-mkcert(request, Domain, OutName, Keyfile, SANs) ->
-    AltNames = lists:foldl(fun(San, Acc) ->
-        <<Acc/binary, ", DNS:", San/binary>>
-    end, <<"subjectAltName=DNS:", (bin(Domain))/binary>>, SANs),
-    Cmd = io_lib:format("openssl req -new -key '~s' -out '~s' -subj '/CN=~s' -addext '~s'",
-                        [Keyfile, OutName, Domain, AltNames]),
-
-    _Status  = os:cmd(Cmd),
-    %io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _Status]),
+mkcert(request, Domain, OutName, Keyfile, []) ->
+    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -subj '/CN=~s' -out '~s'", [Keyfile, Domain, OutName]),
+    _R  = os:cmd(Cmd),
+    {ok, OutName};
+mkcert(Type, Domain, OutName, Keyfile, SANs) ->
+    Names = [ Domain | SANs ],
+    NamesNr = lists:zip(Names, lists:seq(1,length(Names))),
+    Cnf = [
+        "[req]\n",
+        "distinguished_name = req_distinguished_name\n",
+        "x509_extensions = v3_req\n",
+        "prompt = no\n",
+        "[req_distinguished_name]\n",
+        "CN = ", Domain, "\n",
+        "[v3_req]\n",
+        "subjectAltName = @alt_names\n",
+        "[alt_names]\n"
+    ] ++ [
+        [ "DNS.", integer_to_list(Nr), " = ", Name, "\n" ] || {Name, Nr} <- NamesNr
+    ],
+    ConfFile = <<"/tmp/letsencrypt_san_openssl.",(iolist_to_binary(Domain))/binary ,".cnf">>,
+    ok = file:write_file(ConfFile, Cnf),
+    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -out '~s' -subj '/CN=~s' -config '~s'", 
+                        [Keyfile, OutName, Domain, ConfFile]),
+    Cmd1 = case Type of
+        request    -> [Cmd | " -reqexts v3_req" ];
+        autosigned -> [Cmd | " -extensions v3_req -x509 -days 1" ]
+    end,
+    _Status = os:cmd(Cmd1),
+    file:delete(ConfFile),
     {ok, OutName}.
-
-% domain certificate only
-certificate(Domain, DomainCert, CertsPath) ->
-    FileName = CertsPath++"/"++Domain++".crt",
-    %io:format("domain cert: ~p~nintermediate: ~p~n", [DomainCert, IntermediateCert]),
-    %io:format("writing final certificate to ~p~n", [FileName]),
-
-    file:write_file(FileName, DomainCert),
-    FileName.
 
