@@ -31,6 +31,11 @@
 -type jws()            :: #{'alg' => 'RS256', 'jwk' => map(), nonce => undefined|letsencrypt:nonce() }.
 -type ssl_privatekey() :: #{'raw' => crypto:rsa_private(), 'b64' => {binary(), binary()}, 'file' => string()}.
 
+-type domain()         :: binary() | string().
+
+-export_type([
+        domain/0
+    ]).
 
 -define(WEBROOT_CHALLENGE_PATH, <<"/.well-known/acme-challenge">>).
 
@@ -555,11 +560,11 @@ setup_mode(#state{mode=Mode}) ->
 %   - {error, Err} if another error
 %   - 'ok' if succeed
 %
--spec wait_valid(0..10) -> ok|{error, any()}.
+-spec wait_valid(0..20) -> ok|{error, any()}.
 wait_valid(X) ->
     wait_valid(X,X).
 
--spec wait_valid(0..10, 0..10) -> ok|{error, any()}.
+-spec wait_valid(0..20, 0..20) -> ok|{error, any()}.
 wait_valid(0,_) ->
     {error, timeout};
 wait_valid(Cnt,Max) ->
@@ -581,11 +586,11 @@ wait_valid(Cnt,Max) ->
 %   - {error, Err} if another error
 %   - {'ok', Response} if succeed
 %
--spec wait_finalized(atom(), 0..10) -> {ok, map()}|{error, timeout|any()}.
+-spec wait_finalized(atom(), 0..20) -> {ok, map()}|{error, timeout|any()}.
 wait_finalized(Status, X) ->
     wait_finalized(Status,X,X).
 
--spec wait_finalized(atom(), 0..10, 0..10) -> {ok, map()}|{error, timeout|any()}.
+-spec wait_finalized(atom(), 0..20, 0..20) -> {ok, map()}|{error, timeout|any()}.
 wait_finalized(_, 0,_) ->
     {error, timeout};
 wait_finalized(Status, Cnt,Max) ->

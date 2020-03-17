@@ -18,10 +18,9 @@
 -export([private_key/2, cert_request/3, cert_autosigned/3, certificate/3]).
 
 -include_lib("public_key/include/public_key.hrl").
-% -import(letsencrypt_utils, [bin/1]).
 
 % create key
--spec private_key(undefined|{new, string()}|string(), string()) -> letsencrypt:ssl_privatekey().
+-spec private_key(undefined|{new, file:filename_all()}|file:filename_all(), file:filename_all()) -> letsencrypt:ssl_privatekey().
 private_key(undefined, CertsPath) ->
     private_key({new, "letsencrypt.key"}, CertsPath);
 
@@ -29,14 +28,12 @@ private_key({new, KeyFile}, CertsPath) ->
     FileName = CertsPath++"/"++KeyFile,
     Cmd = "openssl genrsa -out '"++FileName++"' 2048",
     _R = os:cmd(Cmd),
-
     private_key(FileName, CertsPath);
 
 private_key(KeyFile, _) ->
     {ok, Pem} = file:read_file(KeyFile),
     [Key]     = public_key:pem_decode(Pem),
     #'RSAPrivateKey'{modulus=N, publicExponent=E, privateExponent=D} = public_key:pem_entry_decode(Key),
-
     #{
         raw => [E,N,D],
         b64 => {
@@ -47,18 +44,14 @@ private_key(KeyFile, _) ->
     }.
 
 
--spec cert_request(string(), string(), list(string())) -> letsencrypt:ssl_csr().
+-spec cert_request(letsencrypt:domain(), file:filename_all(), list(letsencrypt:domain())) -> letsencrypt:ssl_csr().
 cert_request(Domain, CertsPath, SANs) ->
     KeyFile  = CertsPath ++ "/" ++ Domain ++ ".key",
     CertFile = CertsPath ++ "/" ++ Domain ++ ".csr",
     {ok, CertFile} = mkcert(request, Domain, CertFile, KeyFile, SANs),
-    %io:format("CSR ~p~n", [CertFile]),
-
     case file:read_file(CertFile) of
         {ok, RawCsr} ->
             [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
-
-            %io:format("csr= ~p~n", [Csr]),
             letsencrypt_utils:b64encode(Csr);
         {error, enoent} ->
             io:format("cert_request: cert file ~p not found~n", [CertFile]),
@@ -68,42 +61,22 @@ cert_request(Domain, CertsPath, SANs) ->
             throw(unknown_error)
     end.
 
-% % create temporary (1 day) certificate with subjectAlternativeName
-% % used for tls-sni-01 challenge
-% -spec cert_autosigned(string(), string(), list(string())) -> {ok, string()}.
-% cert_autosigned(Domain, KeyFile, SANs) ->
-%     CertFile = "/tmp/"++Domain++"-tlssni-autosigned.pem",
-%     mkcert(request, Domain, CertFile, KeyFile, SANs).
-
-
-% -spec mkcert(request|autosigned, string(), string(), string(), list(string())) -> {ok, string()}.
-% mkcert(request, Domain, OutName, Keyfile, SANs) ->
-%     AltNames = lists:foldl(fun(San, Acc) ->
-%         <<Acc/binary, ", DNS:", San/binary>>
-%     end, <<"subjectAltName=DNS:", (bin(Domain))/binary>>, SANs),
-%     Cmd = io_lib:format("openssl req -new -key '~s' -out '~s' -subj '/CN=~s' -addext '~s'",
-%                         [Keyfile, OutName, Domain, AltNames]),
-
-%     _Status  = os:cmd(Cmd),
-%     %io:format("mkcert(request):~p => ~p~n", [lists:flatten(Cmd), _Status]),
-%     {ok, OutName}.
-
 % domain certificate only
 certificate(Domain, DomainCert, CertsPath) ->
     FileName = CertsPath++"/"++Domain++".crt",
     file:write_file(FileName, DomainCert),
     FileName.
 
-
 % create temporary (1 day) certificate with subjectAlternativeName
 % used for tls-sni-01 challenge
--spec cert_autosigned(string(), string(), list(string())) -> {ok, string()}.
+-spec cert_autosigned(letsencrypt:domain(), file:filename_all(), list(letsencrypt:domain())) -> {ok, file:filename_all()}.
 cert_autosigned(Domain, KeyFile, SANs) ->
-    CertFile = "/tmp/"++Domain++"-tlssni-autosigned.pem",
+    KeyDir = filename:dirname(KeyFile),
+    CertFile = filename:join(KeyDir, <<(letsencrypt_utils:bin(Domain))/binary, "-tlssni-autosigned.pem">>),
     mkcert(autosigned, Domain, CertFile, KeyFile, SANs).
 
 
--spec mkcert(request|autosigned, string(), string(), string(), list(string())) -> {ok, string()}.
+-spec mkcert(request|autosigned, letsencrypt:domain(), file:filename_all(), file:filename_all(), list(letsencrypt:domain())) -> {ok, file:filename_all()}.
 mkcert(Type, Domain, OutName, Keyfile, SANs) ->
     Names = [ Domain | SANs ],
     NamesNr = lists:zip(Names, lists:seq(1,length(Names))),
@@ -121,7 +94,7 @@ mkcert(Type, Domain, OutName, Keyfile, SANs) ->
         [ "DNS.", integer_to_list(Nr), " = ", Name, "\n" ] || {Name, Nr} <- NamesNr
     ],
     ConfDir = filename:dirname(OutName),
-    ConfFile = filename:join(ConfDir, <<"letsencrypt_san_openssl.",(iolist_to_binary(Domain))/binary ,".cnf">>),
+    ConfFile = filename:join(ConfDir, <<"letsencrypt_san_openssl.", (letsencrypt_utils:bin(Domain))/binary ,".cnf">>),
     ok = file:write_file(ConfFile, Cnf),
     Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -out '~s' -subj '/CN=~s' -config '~s'", 
                         [Keyfile, OutName, Domain, ConfFile]),
