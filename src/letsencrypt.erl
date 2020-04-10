@@ -37,7 +37,7 @@
         domain/0
     ]).
 
--define(WEBROOT_CHALLENGE_PATH, <<"/.well-known/acme-challenge">>).
+-define(WEBROOT_CHALLENGE_PATH, <<".well-known/acme-challenge">>).
 
 -record(state, {
 	% acme environment
@@ -534,11 +534,10 @@ getopts([Unk|_], _) ->
 setup_mode(#state{mode=webroot, webroot_path=undefined}) ->
 	io:format("missing 'webroot_path' parameter", []),
 	throw(misarg);
-setup_mode(State=#state{mode=webroot, webroot_path=Path}) ->
+setup_mode(State=#state{mode=webroot, webroot_path=WPath}) ->
     %TODO: check directory is writeable
 	%TODO: handle errors
-	%TODO: protect against injections ?
-    os:cmd(string:join(["mkdir -p '", Path, str(?WEBROOT_CHALLENGE_PATH), "'"], "")),
+    ok = filelib:ensure_dir(filename:join([ WPath, ?WEBROOT_CHALLENGE_PATH, "x" ])),
 	State;
 setup_mode(State=#state{mode=standalone, port=_Port}) ->
 	%TODO: checking port is unused ?
@@ -697,8 +696,8 @@ challenge_init(webroot, #state{webroot_path=WPath, account_key=AccntKey}, 'http-
     maps:fold(
         fun(_K, #{<<"token">> := Token}, _Acc) ->
 			Thumbprint = letsencrypt_jws:keyauth(AccntKey, Token),
-            file:write_file(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>,
-                            Thumbprint)
+            ThumbPrintFile = filename:join([WPath, ?WEBROOT_CHALLENGE_PATH, Token]),
+            ok = file:write_file(ThumbPrintFile, Thumbprint)
         end,
         0, Challenges
     );
@@ -749,7 +748,8 @@ challenge_init(standalone, #state{port=Port, domain=Domain, account_key=AccntKey
 -spec challenge_destroy(mode(), state()) -> ok.
 challenge_destroy(webroot, #state{webroot_path=WPath, challenges=Challenges}) ->
     maps:fold(fun(_K, #{<<"token">> := Token}, _) ->
-        file:delete(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>)
+        ThumbPrintFile = filename:join([WPath, ?WEBROOT_CHALLENGE_PATH, Token]),
+        _ = file:delete(ThumbPrintFile)
     end, 0, Challenges),
     ok;
 challenge_destroy(standalone, _) ->

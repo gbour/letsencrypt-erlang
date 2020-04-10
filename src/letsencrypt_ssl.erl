@@ -25,8 +25,8 @@ private_key(undefined, CertsPath) ->
     private_key({new, "letsencrypt.key"}, CertsPath);
 
 private_key({new, KeyFile}, CertsPath) ->
-    FileName = CertsPath++"/"++KeyFile,
-    Cmd = "openssl genrsa -out '"++FileName++"' 2048",
+    FileName = filename:join(CertsPath, KeyFile),
+    Cmd = "openssl genrsa -out '" ++ letsencrypt_utils:str(FileName) ++ "' 2048",
     _R = os:cmd(Cmd),
     private_key(FileName, CertsPath);
 
@@ -46,9 +46,10 @@ private_key(KeyFile, _) ->
 
 -spec cert_request(letsencrypt:domain(), file:filename_all(), list(letsencrypt:domain())) -> letsencrypt:ssl_csr().
 cert_request(Domain, CertsPath, SANs) ->
-    KeyFile  = CertsPath ++ "/" ++ Domain ++ ".key",
-    CertFile = CertsPath ++ "/" ++ Domain ++ ".csr",
-    {ok, CertFile} = mkcert(request, Domain, CertFile, KeyFile, SANs),
+    DomainStr = letsencrypt_utils:str(Domain),
+    KeyFile  = filename:join(CertsPath, DomainStr ++ ".key"),
+    CertFile = filename:join(CertsPath, DomainStr ++ ".csr"),
+    {ok, CertFile} = mkcert(request, DomainStr, CertFile, KeyFile, SANs),
     case file:read_file(CertFile) of
         {ok, RawCsr} ->
             [{'CertificationRequest', Csr, not_encrypted}] = public_key:pem_decode(RawCsr),
@@ -63,7 +64,8 @@ cert_request(Domain, CertsPath, SANs) ->
 
 % domain certificate only
 certificate(Domain, DomainCert, CertsPath) ->
-    FileName = CertsPath++"/"++Domain++".crt",
+    DomainStr = letsencrypt_utils:str(Domain),
+    FileName = filename:join(CertsPath, DomainStr ++ ".crt"),
     file:write_file(FileName, DomainCert),
     FileName.
 
@@ -71,8 +73,9 @@ certificate(Domain, DomainCert, CertsPath) ->
 % used for tls-sni-01 challenge
 -spec cert_autosigned(letsencrypt:domain(), file:filename_all(), list(letsencrypt:domain())) -> {ok, file:filename_all()}.
 cert_autosigned(Domain, KeyFile, SANs) ->
+    DomainStr = letsencrypt_utils:str(Domain),
     KeyDir = filename:dirname(KeyFile),
-    CertFile = filename:join(KeyDir, <<(letsencrypt_utils:bin(Domain))/binary, "-tlssni-autosigned.pem">>),
+    CertFile = filename:join(KeyDir, DomainStr ++ "-tlssni-autosigned.pem"),
     mkcert(autosigned, Domain, CertFile, KeyFile, SANs).
 
 
@@ -94,9 +97,9 @@ mkcert(Type, Domain, OutName, Keyfile, SANs) ->
         [ "DNS.", integer_to_list(Nr), " = ", Name, "\n" ] || {Name, Nr} <- NamesNr
     ],
     ConfDir = filename:dirname(OutName),
-    ConfFile = filename:join(ConfDir, <<"letsencrypt_san_openssl.", (letsencrypt_utils:bin(Domain))/binary ,".cnf">>),
+    ConfFile = filename:join(ConfDir, "letsencrypt_san_openssl." ++ letsencrypt_utils:str(Domain) ++ ".cnf"),
     ok = file:write_file(ConfFile, Cnf),
-    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -out '~s' -subj '/CN=~s' -config '~s'", 
+    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -out '~s' -subj '/CN=~s' -config '~s'",
                         [Keyfile, OutName, Domain, ConfFile]),
     Cmd1 = case Type of
         request    -> [Cmd | " -reqexts v3_req" ];
