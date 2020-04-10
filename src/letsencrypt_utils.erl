@@ -15,7 +15,7 @@
 -module(letsencrypt_utils).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([b64encode/1, hexdigest/1, hashdigest/2, str/1]).
+-export([b64encode/1, hexdigest/1, hashdigest/2, bin/1, str/1]).
 
 -type character() :: integer().
 
@@ -42,6 +42,15 @@ hex(C)             -> $a + C - 10.
 -spec hashdigest(sha256, binary()) -> binary().
 hashdigest(sha256, Content) ->
 	hexdigest(crypto:hash(sha256, Content)).
+
+
+-spec bin( binary() | string() ) -> binary().
+bin(X) when is_list(X) ->
+    unicode:characters_to_binary(X);
+bin(X) when is_binary(X) ->
+    X;
+bin(_X) ->
+    throw(invalid).
 
 -spec str( binary() | string() ) -> string().
 str(X) when is_binary(X) ->

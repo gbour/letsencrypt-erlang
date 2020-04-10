@@ -7,4 +7,7 @@ all:
 dialize:
 	./rebar3 dialyzer
 
+xref:
+	./rebar3 xref
+
 .PHONY: dialize
