@@ -534,11 +534,10 @@ getopts([Unk|_], _) ->
 setup_mode(#state{mode=webroot, webroot_path=undefined}) ->
 	io:format("missing 'webroot_path' parameter", []),
 	throw(misarg);
-setup_mode(State=#state{mode=webroot, webroot_path=Path}) ->
+setup_mode(State=#state{mode=webroot, webroot_path=WPath}) ->
     %TODO: check directory is writeable
 	%TODO: handle errors
-	%TODO: protect against injections ?
-    ok = filelib:ensure_dir(filename:join([ Path, ?WEBROOT_CHALLENGE_PATH, "x" ])),
+    ok = filelib:ensure_dir(filename:join([ WPath, ?WEBROOT_CHALLENGE_PATH, "x" ])),
 	State;
 setup_mode(State=#state{mode=standalone, port=_Port}) ->
 	%TODO: checking port is unused ?
@@ -698,7 +697,7 @@ challenge_init(webroot, #state{webroot_path=WPath, account_key=AccntKey}, 'http-
         fun(_K, #{<<"token">> := Token}, _Acc) ->
 			Thumbprint = letsencrypt_jws:keyauth(AccntKey, Token),
             ThumbPrintFile = filename:join([WPath, ?WEBROOT_CHALLENGE_PATH, Token]),
-            file:write_file(ThumbPrintFile, Thumbprint)
+            ok = file:write_file(ThumbPrintFile, Thumbprint)
         end,
         0, Challenges
     );
@@ -750,7 +749,7 @@ challenge_init(standalone, #state{port=Port, domain=Domain, account_key=AccntKey
 challenge_destroy(webroot, #state{webroot_path=WPath, challenges=Challenges}) ->
     maps:fold(fun(_K, #{<<"token">> := Token}, _) ->
         ThumbPrintFile = filename:join([WPath, ?WEBROOT_CHALLENGE_PATH, Token]),
-        file:delete(ThumbPrintFile)
+        _ = file:delete(ThumbPrintFile)
     end, 0, Challenges),
     ok;
 challenge_destroy(standalone, _) ->
