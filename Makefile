@@ -5,6 +5,6 @@ all:
 	./rebar3 compile
 
 dialize:
-	./rebar3 dialyzer;\
+	./rebar3 dialyzer
 
 .PHONY: dialize
