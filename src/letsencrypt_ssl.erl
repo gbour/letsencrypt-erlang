@@ -99,8 +99,8 @@ mkcert(Type, Domain, OutName, Keyfile, SANs) ->
     ConfDir = filename:dirname(OutName),
     ConfFile = filename:join(ConfDir, "letsencrypt_san_openssl." ++ letsencrypt_utils:str(Domain) ++ ".cnf"),
     ok = file:write_file(ConfFile, Cnf),
-    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -out '~s' -subj '/CN=~s' -config '~s'",
-                        [Keyfile, OutName, Domain, ConfFile]),
+    Cmd = io_lib:format("openssl req -new -key '~s' -sha256 -out '~s' -config '~s'",
+                        [Keyfile, OutName, ConfFile]),
     Cmd1 = case Type of
         request    -> [Cmd | " -reqexts v3_req" ];
         autosigned -> [Cmd | " -extensions v3_req -x509 -days 1" ]
