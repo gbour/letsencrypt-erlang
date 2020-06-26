@@ -84,7 +84,7 @@
 % returns:
 %	{ok, Pid}
 %
--spec start(list()) -> {'ok', pid}|{'error', {'already_started',pid()}}.
+-spec start(list()) -> {'ok', pid()}|{'error', {'already_started',pid()}}.
 start(Args) ->
     gen_fsm:start_link({global, ?MODULE}, ?MODULE, Args, []).
 
