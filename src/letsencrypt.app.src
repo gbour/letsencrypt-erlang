@@ -6,7 +6,7 @@
    [kernel,
     stdlib,
     shotgun,
-    jiffy,
+    jsx,
     elli
    ]},
   {env,[]},

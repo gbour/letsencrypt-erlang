@@ -15,7 +15,7 @@
 -module(letsencrypt_api).
 -author("Guillaume Bour <guillaume@bour.cc>").
 
--export([directory/2, nonce/2, account/4, order/5, order/4, authorization/4, challenge/4,
+-export([directory/2, nonce/2, account/4, new_order/5, get_order/4, authorization/4, challenge/4,
 		 finalize/5, certificate/4, status/1]).
 
 -import(letsencrypt_utils, [str/1]).
@@ -83,7 +83,7 @@ tcpconn(Key={Proto, Host, Port}) ->
 %
 -spec decode(map(), map()) -> {ok, map()}.
 decode(#{json := true}, Response=#{body := Body}) ->
-	Payload = jiffy:decode(Body, [return_maps, use_nil]),
+	Payload = jsx:decode(Body, [return_maps]),
 	{ok, Response#{json => Payload}};
 decode(_, Response) ->
 	{ok, Response}.
@@ -191,7 +191,7 @@ account(#{<<"newAccount">> := Uri}, Key, Jws, Opts) ->
 	}} = request(post, Uri, #{}, Req, Opts#{json => true}),
 	{ok, Resp, Location, Nonce}.
 
-% order(Directory, Domain, Key, Jws, Opts)
+% new_order(Directory, Domain, Key, Jws, Opts)
 %
 % Request new order.
 % ref: https://www.rfc-editor.org/rfc/rfc8555.html#section-7.4
@@ -205,13 +205,18 @@ account(#{<<"newAccount">> := Uri}, Key, Jws, Opts) ->
 % TODO: support multiple domains
 %		checks 201 created
 %
--spec order(map(), binary(), binary(), map(), map()) -> {ok, map(), binary(), binary()}.
-order(#{<<"newOrder">> := Uri}, Domain, Key, Jws, Opts) ->
+-spec new_order(map(), binary(), [ binary() ], map(), map()) -> {ok, map(), binary(), binary()}.
+new_order(#{<<"newOrder">> := Uri}, Domains, Key, Jws, Opts) ->
+    Idns = lists:map(
+        fun(Domain) ->
+            #{
+                type => dns,
+                value => Domain
+            }
+        end,
+        Domains),
 	Payload = #{
-		identifiers => [#{
-			type => dns,
-			value => Domain
-		 }]
+		identifiers => Idns
 	},
     Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, Payload),
 
@@ -226,7 +231,7 @@ order(#{<<"newOrder">> := Uri}, Domain, Key, Jws, Opts) ->
 %
 % Get order state.
 %
-order(Uri, Key, Jws, Opts) ->
+get_order(Uri, Key, Jws, Opts) ->
     % POST-as-GET = no payload
     Req = letsencrypt_jws:encode(Key, Jws#{url => Uri}, empty),
 

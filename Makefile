@@ -5,8 +5,9 @@ all:
 	./rebar3 compile
 
 dialize:
-	if [[ "$$TRAVIS_OTP_RELEASE" > "18" ]] ; then\
-		./rebar3 dialyzer;\
-	fi
+	./rebar3 dialyzer
+
+xref:
+	./rebar3 xref
 
 .PHONY: dialize

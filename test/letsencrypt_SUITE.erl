@@ -72,11 +72,11 @@ all() ->
     ].
 
 
-init_per_suite(Config) ->
+init_per_suite(_Config) ->
     application:ensure_all_started(letsencrypt),
     [{opts, #{}}].
 
-end_per_suite(Config) ->
+end_per_suite(_Config) ->
 	application:stop(letsencrypt),
 	ok.
 
@@ -97,7 +97,7 @@ init_per_group(sync, Config) ->
 init_per_group(async, Config) ->
     [{filter, async}| setopt(Config, #{async => true})];
 % unidomain/san
-init_per_group(N=san, Config) ->
+init_per_group(san, Config) ->
     [{filler, san}| setopt(Config, #{san => [?HOSTNAME2]})];
 
 init_per_group(GroupName, Config)   ->
@@ -156,7 +156,7 @@ priv_COMMON(Mode, Config, StartOpts) ->
     Async = maps:get(async, Opts, true),
     ?DEBUG("async: ~p, opts: ~p, startopts: ~p", [Async, Opts, StartOpts]),
 
-    {ok, Pid} = letsencrypt:start([{mode, Mode}, staging, {cert_path, "/tmp"}]++StartOpts),
+    {ok, _Pid} = letsencrypt:start([{mode, Mode}, staging, {cert_path, "/tmp"}]++StartOpts),
 
     R3 = case Async of
         false ->
@@ -179,7 +179,7 @@ priv_COMMON(Mode, Config, StartOpts) ->
     letsencrypt:stop(),
     % checking certificate returned
     ?DEBUG("result: ~p", [R3]),
-    {ok, #{cert := Cert, key := Key}} = R3,
+    {ok, #{cert := Cert, key := _Key}} = R3,
     certificate_validation(Cert, ?HOSTNAME, maps:get(san, Opts, [])),
 
     ok.
@@ -219,16 +219,16 @@ rdnSeq({rdnSequence, Seq}, Match) ->
     rdnSeq(Seq, Match);
 rdnSeq([[{'AttributeTypeAndValue', Match, Result}]|_], Match) ->
     str(Result);
-rdnSeq([H|T], Match) ->
+rdnSeq([_H|T], Match) ->
     rdnSeq(T, Match);
 rdnSeq([], _) ->
     undefined.
 
-exten([], Match) ->
+exten([], _Match) ->
     undefined;
 exten([#'Extension'{extnID = Match, extnValue = Values}|_], Match) ->
     [ str(DNS) || DNS <- Values];
-exten([H|T], Match) ->
+exten([_H|T], Match) ->
     exten(T, Match).
 
 str({printableString, Str}) ->

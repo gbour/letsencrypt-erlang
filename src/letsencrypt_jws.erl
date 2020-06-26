@@ -46,22 +46,22 @@ init(#{b64 := {N,E}}) ->
 %
 -spec encode(letsencrypt:ssl_privatekey(), letsencrypt:jws(), map()|empty) -> binary().
 encode(#{raw := RSAKey}, Jws, Content) ->
-    Protected = letsencrypt_utils:b64encode(jiffy:encode(Jws)),
+    Protected = letsencrypt_utils:b64encode(jsx:encode(Jws)),
 	Payload = case Content of
 		% for POST-as-GET queries, payload is just an empty string
-		empty -> <<"">>;
-		_     -> letsencrypt_utils:b64encode(jiffy:encode(Content))
+		empty -> <<>>;
+		_     -> letsencrypt_utils:b64encode(jsx:encode(Content))
 	end,
 
     Sign  = crypto:sign(rsa, sha256, <<Protected/binary, $., Payload/binary>>, RSAKey),
     Sign2 = letsencrypt_utils:b64encode(Sign),
 
-    jiffy:encode({[
+    jsx:encode(#{
         %{header, {[]}},
-        {protected, Protected},
-        {payload  , Payload},
-        {signature, Sign2}
-    ]}).
+        <<"protected">> => Protected,
+        <<"payload">> => Payload,
+        <<"signature">> => Sign2
+    }).
 
 % keyauth(Key, Token)
 %
@@ -72,10 +72,9 @@ encode(#{raw := RSAKey}, Jws, Content) ->
 %	KeyAuthorization
 %
 keyauth(#{<<"e">> := E, <<"n">> := N, <<"kty">> := Kty}, Token) ->
-	Thumbprint = jiffy:encode({[
-		{e, E},
-		{kty, Kty},
-		{n, N}
-	]}, [force_utf8]),
-
+	Thumbprint = jsx:encode(#{
+        <<"e">> => E,
+        <<"kty">> => Kty,
+        <<"n">> => N
+    }),
     <<Token/binary, $., (letsencrypt_utils:b64encode(crypto:hash(sha256, Thumbprint)))/binary>>.

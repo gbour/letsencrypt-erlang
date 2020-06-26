@@ -31,8 +31,13 @@
 -type jws()            :: #{'alg' => 'RS256', 'jwk' => map(), nonce => undefined|letsencrypt:nonce() }.
 -type ssl_privatekey() :: #{'raw' => crypto:rsa_private(), 'b64' => {binary(), binary()}, 'file' => string()}.
 
+-type domain()         :: binary() | string().
 
--define(WEBROOT_CHALLENGE_PATH, <<"/.well-known/acme-challenge">>).
+-export_type([
+        domain/0
+    ]).
+
+-define(WEBROOT_CHALLENGE_PATH, <<".well-known/acme-challenge">>).
 
 -record(state, {
 	% acme environment
@@ -78,8 +83,8 @@
 %
 % returns:
 %	{ok, Pid}
-%	
--spec start(list()) -> {'ok', pid}|{'error', {'already_started',pid()}}.
+%
+-spec start(list()) -> {'ok', pid()}|{'error', {'already_started',pid()}}.
 start(Args) ->
     gen_fsm:start_link({global, ?MODULE}, ?MODULE, Args, []).
 
@@ -237,34 +242,38 @@ idle(get_challenge, _, State) ->
 %  - 'idle' if process failed
 %  - 'pending' waiting for challenges to be completes
 %
-idle({create, Domain, _Opts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
-											  nonce=Nonce, opts=Opts}) ->
+idle({create, Domain, CertOpts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
+                                              nonce=Nonce, opts=Opts}) ->
     % 'http-01' or 'tls-sni-01'
-	% TODO: validate type
+    % TODO: validate type
     ChallengeType = maps:get(challenge, Opts, 'http-01'),
+    SANs  = lists:map(
+        fun(D) -> bin(D) end,
+        maps:get(san, CertOpts, [])),
 
-    %Conn  = get_conn(State),
-    %Nonce = get_nonce(Conn, State),
-	%TODO: SANs
-    %SANs  = maps:get(san, Opts, []),
+    {ok, Accnt, Location, Nonce2} = letsencrypt_api:account(Dir, Key, Jws#{nonce => Nonce}, Opts),
+    AccntKey = maps:get(<<"key">>, Accnt),
 
-	{ok, Accnt, Location, Nonce2} = letsencrypt_api:account(Dir, Key, Jws#{nonce => Nonce}, Opts),
-	AccntKey = maps:get(<<"key">>, Accnt),
+    Jws2 = #{
+        alg   => maps:get(alg, Jws),
+        nonce => Nonce2,
+        kid   => Location
+    },
+    %TODO: checks order is ok
+    Domains = [ bin(Domain) | SANs ],
+    {ok, Order, OrderLocation, Nonce3} = letsencrypt_api:new_order(Dir, Domains, Key, Jws2, Opts),
 
-	Jws2 = #{
-		alg   => maps:get(alg, Jws),
-		nonce => Nonce2,
-		kid   => Location
-	},
-	%TODO: checks order is ok
-	{ok, Order, OrderLocation, Nonce3} = letsencrypt_api:order(Dir, bin(Domain), Key, Jws2, Opts),
-	% we need to keep trace of order location
-	Order2 = Order#{<<"location">> => OrderLocation},
-
-    %Nonce2    = letsencrypt_api:new_reg(Conn, BasePath, Key, JWS#{nonce => Nonce}),
-    %AuthzResp = authz([Domain|SANs], ChallengeType, State#state{conn=Conn, nonce=Nonce2}),
+    % we need to keep trace of order location
+    Order2 = Order#{<<"location">> => OrderLocation},
+    StateAuth = State#state{
+        domain = Domain,
+        jws = Jws2,
+        account_key = AccntKey,
+        nonce = Nonce3,
+        sans = SANs
+    },
     AuthUris = maps:get(<<"authorizations">>, Order),
-    AuthzResp = authz(ChallengeType, AuthUris, State#state{domain=Domain, jws=Jws2, account_key=AccntKey, nonce=Nonce3}),
+    AuthzResp = authz(ChallengeType, AuthUris, StateAuth),
     {StateName, Reply, Challenges, Nonce5} = case AuthzResp of
             {error, Err, Nonce3} ->
                 {idle, {error, Err}, nil, Nonce3};
@@ -273,8 +282,12 @@ idle({create, Domain, _Opts}, _, State=#state{directory=Dir, key=Key, jws=Jws,
                 {pending, ok, Xchallenges, Nonce4}
     end,
 
-    {reply, Reply, StateName, 
-     State#state{domain=Domain, jws=Jws2, nonce=Nonce5, order=Order2, challenges=Challenges, sans=[], account_key=AccntKey}}.
+    StateReply = StateAuth#state{
+        order = Order2,
+        nonce = Nonce5,
+        challenges = Challenges
+    },
+    {reply, Reply, StateName, StateReply}.
 
 
 % state 'pending'
@@ -351,7 +364,8 @@ valid(_, _, State=#state{mode=Mode, domain=Domain, sans=SANs, cert_path=CertPath
 
 	%NOTE: keyfile is required for csr generation
 	#{file := KeyFile} = letsencrypt_ssl:private_key({new, str(Domain) ++ ".key"}, CertPath),
-	Csr = letsencrypt_ssl:cert_request(str(Domain), CertPath, SANs),
+
+	Csr = letsencrypt_ssl:cert_request(Domain, CertPath, SANs),
 	{ok, FinOrder, _, Nonce2} = letsencrypt_api:finalize(Order, Csr, Key,
 														 Jws#{nonce => Nonce}, Opts),
 
@@ -374,7 +388,7 @@ valid(_, _, State=#state{mode=Mode, domain=Domain, sans=SANs, cert_path=CertPath
 %   state 'processing' : still ongoing
 %   state 'valid'      : certificate is ready
 finalize(processing, _, State=#state{order=Order, key=Key, jws=Jws, nonce=Nonce, opts=Opts}) ->
-	{ok, Order2, _, Nonce2} = letsencrypt_api:order(
+	{ok, Order2, _, Nonce2} = letsencrypt_api:get_order(
 		maps:get(<<"location">>, Order, nil),
 		Key, Jws#{nonce => Nonce}, Opts),
 	{reply, status(maps:get(<<"status">>, Order2, nil)), finalize,
@@ -397,7 +411,7 @@ finalize(valid, _, State=#state{order=Order, domain=Domain, cert_key_file=KeyFil
                                 opts=Opts}) ->
 	% download certificate
 	{ok, Cert} = letsencrypt_api:certificate(Order, Key, Jws#{nonce => Nonce}, Opts),
-	CertFile   = letsencrypt_ssl:certificate(str(Domain), Cert, CertPath),
+	CertFile   = letsencrypt_ssl:certificate(Domain, Cert, CertPath),
 
 	{reply, {ok, #{key => bin(KeyFile), cert => bin(CertFile)}}, idle,
 	 State#state{nonce=undefined}};
@@ -529,11 +543,10 @@ getopts([Unk|_], _) ->
 setup_mode(#state{mode=webroot, webroot_path=undefined}) ->
 	io:format("missing 'webroot_path' parameter", []),
 	throw(misarg);
-setup_mode(State=#state{mode=webroot, webroot_path=Path}) ->
+setup_mode(State=#state{mode=webroot, webroot_path=WPath}) ->
     %TODO: check directory is writeable
 	%TODO: handle errors
-	%TODO: protect against injections ?
-    os:cmd(string:join(["mkdir -p '", Path, str(?WEBROOT_CHALLENGE_PATH), "'"], "")),
+    ok = filelib:ensure_dir(filename:join([ WPath, ?WEBROOT_CHALLENGE_PATH, "x" ])),
 	State;
 setup_mode(State=#state{mode=standalone, port=_Port}) ->
 	%TODO: checking port is unused ?
@@ -555,11 +568,11 @@ setup_mode(#state{mode=Mode}) ->
 %   - {error, Err} if another error
 %   - 'ok' if succeed
 %
--spec wait_valid(0..10) -> ok|{error, any()}.
+-spec wait_valid(0..20) -> ok|{error, any()}.
 wait_valid(X) ->
     wait_valid(X,X).
 
--spec wait_valid(0..10, 0..10) -> ok|{error, any()}.
+-spec wait_valid(0..20, 0..20) -> ok|{error, any()}.
 wait_valid(0,_) ->
     {error, timeout};
 wait_valid(Cnt,Max) ->
@@ -581,11 +594,11 @@ wait_valid(Cnt,Max) ->
 %   - {error, Err} if another error
 %   - {'ok', Response} if succeed
 %
--spec wait_finalized(atom(), 0..10) -> {ok, map()}|{error, timeout|any()}.
+-spec wait_finalized(atom(), 0..20) -> {ok, map()}|{error, timeout|any()}.
 wait_finalized(Status, X) ->
     wait_finalized(Status,X,X).
 
--spec wait_finalized(atom(), 0..10, 0..10) -> {ok, map()}|{error, timeout|any()}.
+-spec wait_finalized(atom(), 0..20, 0..20) -> {ok, map()}|{error, timeout|any()}.
 wait_finalized(_, 0,_) ->
     {error, timeout};
 wait_finalized(Status, Cnt,Max) ->
@@ -692,8 +705,8 @@ challenge_init(webroot, #state{webroot_path=WPath, account_key=AccntKey}, 'http-
     maps:fold(
         fun(_K, #{<<"token">> := Token}, _Acc) ->
 			Thumbprint = letsencrypt_jws:keyauth(AccntKey, Token),
-            file:write_file(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>,
-                            Thumbprint)
+            ThumbPrintFile = filename:join([WPath, ?WEBROOT_CHALLENGE_PATH, Token]),
+            ok = file:write_file(ThumbPrintFile, Thumbprint)
         end,
         0, Challenges
     );
@@ -744,7 +757,8 @@ challenge_init(standalone, #state{port=Port, domain=Domain, account_key=AccntKey
 -spec challenge_destroy(mode(), state()) -> ok.
 challenge_destroy(webroot, #state{webroot_path=WPath, challenges=Challenges}) ->
     maps:fold(fun(_K, #{<<"token">> := Token}, _) ->
-        file:delete(<<(bin(WPath))/binary, $/, ?WEBROOT_CHALLENGE_PATH/binary, $/, Token/binary>>)
+        ThumbPrintFile = filename:join([WPath, ?WEBROOT_CHALLENGE_PATH, Token]),
+        _ = file:delete(ThumbPrintFile)
     end, 0, Challenges),
     ok;
 challenge_destroy(standalone, _) ->

@@ -43,20 +43,20 @@ hex(C)             -> $a + C - 10.
 hashdigest(sha256, Content) ->
 	hexdigest(crypto:hash(sha256, Content)).
 
--spec bin(binary()|string()) -> binary().
+
+-spec bin( binary() | string() | atom() ) -> binary().
 bin(X) when is_binary(X) ->
     X;
 bin(X) when is_list(X) ->
-    list_to_binary(X);
+    unicode:characters_to_binary(X);
 bin(X) when is_atom(X) ->
     erlang:atom_to_binary(X, utf8);
 bin(_X) ->
     throw(invalid).
 
-
--spec str(binary()) -> string().
+-spec str( binary() | string() | integer() ) -> string().
 str(X) when is_binary(X) ->
-    binary_to_list(X);
+    unicode:characters_to_list(X);
 str(X) when is_integer(X) ->
     integer_to_list(X);
 str(X) when is_list(X) ->
